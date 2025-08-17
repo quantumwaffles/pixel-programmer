@@ -309,7 +309,7 @@
                     <div class="text-[10px] uppercase tracking-wide text-base-content/50">Editor</div>
                 </div>
                 <div class="px-4 flex-1 min-h-0 flex flex-col">
-                    <div class="border border-base-300 rounded overflow-hidden flex-1 min-h-0">
+                    <div class="border border-base-300 rounded overflow-auto flex-1 min-h-0">
                         <CodeMirrorEditor
                             class="font-mono text-sm leading-snug h-full"
                             bind:value={code}
@@ -396,3 +396,8 @@
     </div>
 </section>
 <input type="file" accept=".tpx,.txt" class="hidden" bind:this={fileInputEl} onchange={handleFileChosen} />
+
+<style>
+    :global(.cm-editor) { height:100%; }
+    :global(.cm-editor .cm-scroller) { overflow:auto; }
+</style>
