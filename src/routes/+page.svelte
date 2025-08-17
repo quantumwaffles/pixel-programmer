@@ -5,37 +5,49 @@
     import { interpret } from "$lib/turtle-lang/interpreter.js";
 
     // Editor code content
-    let code = $state(`// Turtle demo script exercising all features
-// Abbreviations (f,r,l,b) and full words; hsv absolute / offsets / ignores
-// Draw a square
+        let code = $state(`// Turtle demo script exercising all features including repeat
+// Abbreviations (f,r,l,b) hsv absolute/offset/ignore and nested repeat blocks
+
 pen down
 hsv 30 90 90
-forward 15
-right 90
-f 15
-r 90
-f 15
-r 90
-f 15  // completes square
 
-// Change hue only (offset), keep s & v
-hsv +120 _ _
-l 45
-f 10
+// Draw a square using repeat (size 15)
+repeat 4 {
+    f 15
+    r 90
+}
 
-// Adjust hue again, decrease saturation, bump value
-hsv +120 -30 +5
-left 90
-back 5
+// Star-like pattern (rotate & change hue)
+repeat 6 {
+    hsv +60 _ _    // shift hue
+    f 10
+    l 60
+}
 
-// Lift pen, move without drawing
+// Move without drawing
 pen up
 f 5
-
-// Lower pen and draw a short leg with dimmer value (ignore h & s)
 pen down
-hsv _ _ 40
-f 8
+
+// Nested repeats: a tiny grid stamp 3x repeated 3 times with hue shift
+repeat 3 {
+    hsv +40 -10 +0
+    repeat 3 {
+        f 4
+        r 90
+        f 4
+        r 90
+        f 4
+        r 90
+        f 4
+        r 90 // tiny square
+        r 120 // reorient
+    }
+}
+
+// Final color tweak: lower value only
+hsv _ _ -30
+f 6
 // End of demo`);
 
     // Lexer output
@@ -89,16 +101,14 @@ f 8
         }
     }
 
-    // Auto-run effect (debounced)
+    // Auto-run effect (debounced) – must reference `code` so changes retrigger.
     $effect(() => {
+        const _codeSnapshot = code; // dependency tracking
         if (!autoRun) return; // disabled
         if (lexError) return; // don't run with syntax errors
         if (!canvasInst) return; // wait for canvas
-        // Debounce
         if (_runTimer) clearTimeout(_runTimer);
-        _runTimer = setTimeout(() => {
-            handleRun();
-        }, 300);
+        _runTimer = setTimeout(() => { handleRun(); }, 300);
         return () => { if (_runTimer) clearTimeout(_runTimer); };
     });
 </script>
@@ -163,7 +173,7 @@ f 8
                             <pre class="bg-base-300/60 rounded p-2 text-[11px] leading-tight overflow-auto max-h-[200px]">{JSON.stringify(tokens, null, 2)}</pre>
                         {/if}
                         <div class="mt-2 text-[10px] text-base-content/50 space-y-1">
-                            <p>Supported: forward, back, left, right, pen up|down, hsv.</p>
+                            <p>Supported: forward/back/left/right (abbr), pen up|down, hsv, repeat.</p>
                         </div>
                     </div>
                 </div>

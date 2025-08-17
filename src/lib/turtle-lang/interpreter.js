@@ -111,8 +111,14 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
 
   syncCanvasPen();
 
-  for (const t of tokens) {
-    switch (t.type) {
+  function execList(list) {
+    for (const t of list) {
+      switch (t.type) {
+        case 'REPEAT': {
+          const times = Math.floor(t.count);
+          for (let k=0;k<times;k++) execList(t.body);
+          break;
+        }
       case 'PEN': {
         penDown = t.state === 'down';
         if (record) ops.push({ op:'pen', down:penDown });
@@ -161,8 +167,11 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
       }
       default:
         throw new Error(`Unknown token type: ${(t).type}`);
+      }
     }
   }
+
+  execList(tokens);
 
   return {
     finalX: Math.round(x),

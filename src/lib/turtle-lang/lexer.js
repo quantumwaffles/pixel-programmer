@@ -7,6 +7,7 @@
  *   right n          - rotate right n units (r, ri, rig, righ, right)
  *   pen up|down      - raise or lower the pen
  *   hsv h s v        - set HSV color; each param: offset (+n|-n), absolute (n), or '_' ignore
+ *   repeat N { ... } - repeat enclosed block N times (blocks can nest)
  *
  * Returns an array of instruction tokens rather than low-level lexical tokens to keep things practical.
  * Each token has a type field plus other fields:
@@ -80,58 +81,93 @@ function resolveAbbrev(word) {
 export function parse(source) {
 	if (typeof source !== 'string') throw new TypeError('parse() requires a string');
 	const lines = preprocessLines(source);
-	/** @type {any[]} */
-	const tokens = [];
+	let i = 0;
 
-	lines.forEach((line, lineIndex) => {
-		if (!line) return; // skip empty
-		const parts = line.split(/\s+/);
-		let head = ident(parts[0]);
-		head = resolveAbbrev(head);
+	function parseBlock() {
+		/** @type {any[]} */
+		const out = [];
+		while (i < lines.length) {
+			let line = lines[i];
+			if (!line) { i++; continue; }
+			if (line === '}') { i++; break; } // end of current block
 
-		const emit = (tok) => tokens.push(tok);
+			const parts = line.split(/\s+/);
+			let headRaw = ident(parts[0]);
+			headRaw = resolveAbbrev(headRaw);
 
-		switch (head) {
-			case 'forward':
-			case 'back': {
-				if (parts.length !== 2) throw syntaxError(`${head} requires 1 numeric argument`, lineIndex, line.length);
-				const value = Number(parts[1]);
-				if (!Number.isFinite(value)) throw syntaxError(`Invalid number: ${parts[1]}`, lineIndex, line.indexOf(parts[1]));
-				emit({ type: 'MOVE', direction: head, value });
-				break;
-			}
-			case 'left':
-			case 'right': {
-				if (parts.length !== 2) throw syntaxError(`${head} requires 1 numeric argument`, lineIndex, line.length);
-				const value = Number(parts[1]);
-				if (!Number.isFinite(value)) throw syntaxError(`Invalid number: ${parts[1]}`, lineIndex, line.indexOf(parts[1]));
-				emit({ type: 'TURN', direction: head, value });
-				break;
-			}
-			case 'pen': {
-				if (parts.length !== 2) throw syntaxError('pen requires one argument: up|down', lineIndex, line.length);
-				const state = ident(parts[1]);
-				if (state !== 'up' && state !== 'down') throw syntaxError(`Invalid pen state: ${parts[1]}`, lineIndex, line.indexOf(parts[1]));
-				emit({ type: 'PEN', state });
-				break;
-			}
-			case 'hsv': {
-				if (parts.length !== 4) throw syntaxError('hsv requires 3 params: h s v', lineIndex, line.length);
-				try {
-					const h = parseHSVParam(parts[1]);
-					const s = parseHSVParam(parts[2]);
-					const v = parseHSVParam(parts[3]);
-					emit({ type: 'HSV', h, s, v });
-				} catch (e) {
-					throw syntaxError(e.message, lineIndex, line.indexOf('hsv'));
+			if (headRaw === 'repeat') {
+				if (parts.length < 2) throw syntaxError('repeat requires a count', i, line.length);
+				const count = Number(parts[1]);
+				if (!Number.isFinite(count) || count < 0) throw syntaxError(`Invalid repeat count: ${parts[1]}`, i, line.indexOf(parts[1]));
+				// Detect inline brace
+				let hasBrace = /{\s*$/.test(line);
+				i++;
+				if (!hasBrace) {
+					// Skip blank lines to find a '{'
+					while (i < lines.length && lines[i].trim() === '') i++;
+					if (i >= lines.length || lines[i] !== '{') throw syntaxError('Expected { after repeat count', i, 0);
+					i++; // consume '{'
 				}
-				break;
+				else {
+					// If line ends with '{', we already consumed line including brace
+				}
+				const body = parseBlock();
+				out.push({ type: 'REPEAT', count, body });
+				continue;
 			}
-			default:
-				throw syntaxError(`Unknown command: ${parts[0]}`, lineIndex, 0);
-		}
-	});
 
+			switch (headRaw) {
+				case 'forward':
+				case 'back': {
+					if (parts.length !== 2) throw syntaxError(`${headRaw} requires 1 numeric argument`, i, line.length);
+					const value = Number(parts[1]);
+					if (!Number.isFinite(value)) throw syntaxError(`Invalid number: ${parts[1]}`, i, line.indexOf(parts[1]));
+					out.push({ type: 'MOVE', direction: headRaw, value });
+					i++;
+					break;
+				}
+				case 'left':
+				case 'right': {
+					if (parts.length !== 2) throw syntaxError(`${headRaw} requires 1 numeric argument`, i, line.length);
+					const value = Number(parts[1]);
+					if (!Number.isFinite(value)) throw syntaxError(`Invalid number: ${parts[1]}`, i, line.indexOf(parts[1]));
+					out.push({ type: 'TURN', direction: headRaw, value });
+					i++;
+					break;
+				}
+				case 'pen': {
+					if (parts.length !== 2) throw syntaxError('pen requires one argument: up|down', i, line.length);
+					const state = ident(parts[1]);
+					if (state !== 'up' && state !== 'down') throw syntaxError(`Invalid pen state: ${parts[1]}`, i, line.indexOf(parts[1]));
+					out.push({ type: 'PEN', state });
+					i++;
+					break;
+				}
+				case 'hsv': {
+					if (parts.length !== 4) throw syntaxError('hsv requires 3 params: h s v', i, line.length);
+					try {
+						const h = parseHSVParam(parts[1]);
+						const s = parseHSVParam(parts[2]);
+						const v = parseHSVParam(parts[3]);
+						out.push({ type: 'HSV', h, s, v });
+					} catch (e) {
+						throw syntaxError(e.message, i, line.indexOf('hsv'));
+					}
+					i++;
+					break;
+				}
+				case '{': {
+					// Stray opening brace not after repeat
+					throw syntaxError('Unexpected {', i, 0);
+				}
+				default:
+					throw syntaxError(`Unknown command: ${parts[0]}`, i, 0);
+			}
+		}
+		return out;
+	}
+
+	const tokens = parseBlock();
 	return tokens;
 }
 
