@@ -144,6 +144,55 @@
     let _saveTimer = null;
     let lastLoaded = false;
 
+    // File I/O (download/upload .tpx scripts)
+    let fileInputEl = null;
+    function downloadTPX(){
+        try {
+            // Determine filename from first line comment if any
+            let filename = 'script.tpx';
+            if (code) {
+                const firstLine = code.replace(/\r\n?/g,'\n').split('\n')[0];
+                // Accept # or // comment starters at beginning (allow leading spaces)
+                const m = /^\s*(?:#|\/\/)(.*)$/.exec(firstLine);
+                if (m) {
+                    let raw = m[1].trim();
+                    // Remove trailing punctuation that might not belong
+                    raw = raw.replace(/[\.:]+$/,'').trim();
+                    // Collapse spaces
+                    raw = raw.replace(/\s+/g,' ');
+                    if (raw.length) {
+                        // Sanitize: keep letters, numbers, space, dash, underscore
+                        let safe = raw.replace(/[^A-Za-z0-9 _-]/g,'');
+                        safe = safe.trim().replace(/\s+/g,'-').toLowerCase();
+                        if (safe.length > 40) safe = safe.slice(0,40); // limit length
+                        if (safe.length) filename = safe + '.tpx';
+                    }
+                }
+            }
+            const blob = new Blob([code], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
+        } catch (e){ console.error('Download failed', e); }
+    }
+    async function handleFileChosen(ev){
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            code = text;
+        } catch(e){
+            console.error('Failed to read file', e);
+        } finally {
+            ev.target.value = ''; // reset so same file can be chosen again
+        }
+    }
+    function triggerLoad(){
+        fileInputEl && fileInputEl.click();
+    }
+
     // Load from localStorage (once, client only)
     $effect(() => {
         if (lastLoaded) return;
@@ -275,6 +324,8 @@
                                 <button class="btn btn-warning btn-sm" onclick={() => { cancelRun?.(); runningAsync=false; }}>Stop</button>
                             {/if}
                             <button class="btn btn-outline btn-sm" onclick={() => { canvasInst?.clearPixels?.(); lastRunStats=null; runError=null; }}>Clear</button>
+                            <button class="btn btn-outline btn-sm" onclick={downloadTPX} title="Download .tpx script">Download</button>
+                            <button class="btn btn-outline btn-sm" onclick={triggerLoad} title="Load .tpx script">Upload</button>
                             <label class="label cursor-pointer gap-1 ml-auto text-xs">
                                 <span class="text-base-content/60">Auto</span>
                                 <input type="checkbox" class="toggle toggle-xs" checked={autoRun} onchange={(e)=> autoRun = e.currentTarget.checked} />
@@ -344,3 +395,4 @@
         </div>
     </div>
 </section>
+<input type="file" accept=".tpx,.txt" class="hidden" bind:this={fileInputEl} onchange={handleFileChosen} />

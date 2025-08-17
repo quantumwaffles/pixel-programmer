@@ -8,6 +8,7 @@
  *   pen up|down      - raise or lower the pen
  *   hsv h s v        - set HSV color; each param: offset (+n|-n), absolute (n), or '_' ignore
  *   repeat N:        - start an indented block repeated N times (ends when indentation decreases)
+ *   repeat until EXPR: - loop while expression is false (check before each iteration)
  *   if EXPR:         - conditionally execute an indented block when expression is non-zero
  *   break            - exit the nearest enclosing repeat loop
  *   continue         - skip to next iteration of nearest enclosing repeat loop
@@ -161,7 +162,14 @@ function parseExpressionString(str, line, col) {
 		}
 		if (t.type==='num'){ consume(); return { kind:'num', value: Number(t.value) }; }
 		if (t.type==='id'){ consume(); return { kind:'var', name:t.value }; }
-		if (t.type==='op' && t.value==='('){ consume(); const expr=parseAddSub(); const t2=consume(); if(!t2||t2.type!=='op'||t2.value!==')') throw syntaxError('Expected )', line, col); return expr; }
+		if (t.type==='op' && t.value==='('){
+			consume();
+			// Allow full comparison-level expression inside parentheses so (a > b) works
+			const expr = parseComparison();
+			const t2 = consume();
+			if(!t2||t2.type!=='op'||t2.value!==')') throw syntaxError('Expected )', line, col);
+			return expr;
+		}
 		throw syntaxError(`Unexpected token in expression`, line, col);
 	}
 	function parseMulDiv(){
@@ -179,8 +187,11 @@ function parseExpressionString(str, line, col) {
 		while (true){ const t=peek(); if(t && t.type==='op' && ['==','!=','<','>','<=','>='].includes(t.value)){ consume(); node={ kind:'bin', op:t.value, left:node, right:parseAddSub() }; } else break; }
 		return node;
 	}
-	const ast = parseComparison();
-	if (pos !== tokens.length) throw syntaxError('Unexpected extra tokens in expression', line, col);
+		const ast = parseComparison();
+		if (pos !== tokens.length) {
+			const remaining = tokens.slice(pos).map(t=>t.value||t.type).join(' ');
+			throw syntaxError(`Unexpected extra tokens in expression: '${str}' -> leftover: ${remaining}`, line, col);
+		}
 	return { expr: ast };
 }
 
@@ -223,15 +234,29 @@ export function parse(source) {
 			}
 
 			if (headRaw === 'repeat') {
-				// Expect trailing ':'
 				const colonPos = content.lastIndexOf(':');
-				if (colonPos === -1) throw syntaxError("Expected ':' after repeat count", i, 0);
-				const exprStr = content.slice(content.indexOf(parts[1]), colonPos).trim();
+				if (colonPos === -1) throw syntaxError("Expected ':' after repeat", i, 0);
+				const bodyHeader = content.slice(0, colonPos); // without trailing ':'
+				// Match 'repeat until <expr>' (case-insensitive)
+				const untilMatch = /^repeat\s+until\s+(.+)$/i.exec(bodyHeader);
+				if (untilMatch) {
+					const exprStr = untilMatch[1].trim();
+					if (!exprStr) throw syntaxError('repeat until requires an expression', i, 0);
+					const untilExpr = parseValueExpression(exprStr, i, 0);
+					i++;
+					const body = parseBlock(indent);
+					out.push({ type:'REPEAT', mode:'until', until: untilExpr, count: null, body });
+					continue;
+				}
+				// Else count form: extract expression after 'repeat'
+				const countMatch = /^repeat\s+(.+)$/i.exec(bodyHeader);
+				if (!countMatch) throw syntaxError('Malformed repeat statement', i, 0);
+				const exprStr = countMatch[1].trim();
 				if (!exprStr) throw syntaxError('repeat requires a count', i, 0);
 				const countExpr = parseValueExpression(exprStr, i, 0);
-				i++; // advance to first body line
-				const body = parseBlock(indent); // lines with greater indent
-				out.push({ type: 'REPEAT', count: countExpr, body });
+				i++;
+				const body = parseBlock(indent);
+				out.push({ type:'REPEAT', mode:'count', count: countExpr, until:null, body });
 				continue;
 			}
 
@@ -262,15 +287,20 @@ export function parse(source) {
 			switch (headRaw) {
 				case 'forward':
 				case 'back': {
-					if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, 0);
-					const value = parseValueExpression(content.slice(content.indexOf(parts[1])), i, 0);
+						if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, 0);
+						// Avoid using indexOf(parts[1]) because argument's first character may appear in command (e.g. forward w)
+						let argStart = content.indexOf(parts[0]) + parts[0].length;
+						while (argStart < content.length && /\s/.test(content[argStart])) argStart++;
+						const value = parseValueExpression(content.slice(argStart), i, argStart);
 					out.push({ type: 'MOVE', direction: headRaw, value });
 					i++; break;
 				}
 				case 'left':
 				case 'right': {
-					if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, 0);
-					const value = parseValueExpression(content.slice(content.indexOf(parts[1])), i, 0);
+						if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, 0);
+						let argStart = content.indexOf(parts[0]) + parts[0].length;
+						while (argStart < content.length && /\s/.test(content[argStart])) argStart++;
+						const value = parseValueExpression(content.slice(argStart), i, argStart);
 					out.push({ type: 'TURN', direction: headRaw, value });
 					i++; break;
 				}

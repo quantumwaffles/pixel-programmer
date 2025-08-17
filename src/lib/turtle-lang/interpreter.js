@@ -10,7 +10,7 @@ import { parse } from './lexer.js';
 /** @typedef {{mode:'offset'|'absolute'|'ignore', value:number|null}} HSVParam */
 /** @typedef {{type:'HSV',h:HSVParam,s:HSVParam,v:HSVParam}} HSVTok */
 /** @typedef {{type:'VAR',name:string,value:any,reassign:boolean}} VarTok */
-/** @typedef {{type:'REPEAT',count:any,body:Token[]}} RepeatTok */
+/** @typedef {{type:'REPEAT',mode:'count',count:any,until:null,body:Token[]}|{type:'REPEAT',mode:'until',count:null,until:any,body:Token[]}} RepeatTok */
 /** @typedef {{type:'IF',test:any,body:Token[]}} IfTok */
 /** @typedef {{type:'BREAK'}} BreakTok */
 /** @typedef {{type:'CONTINUE'}} ContinueTok */
@@ -182,13 +182,24 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
           break;
         }
         case 'REPEAT': {
-          let countVal = evalValue(t.count);
-          if (!Number.isFinite(countVal)) throw new Error('Invalid repeat count');
-          const times = Math.floor(countVal);
-          for (let k=0;k<times;k++) {
-            const br = execList(t.body);
-            if (br === 'break') break; // break out of repeat
-            if (br === 'continue') continue; // next iteration
+          if (t.mode === 'count') {
+            let countVal = evalValue(t.count);
+            if (!Number.isFinite(countVal)) throw new Error('Invalid repeat count');
+            const times = Math.floor(countVal);
+            for (let k=0;k<times;k++) {
+              const br = execList(t.body);
+              if (br === 'break') break; // break out of repeat
+              if (br === 'continue') continue; // next iteration
+            }
+          } else { // until mode
+            while (true) {
+              let condVal = evalValue(t.until);
+              if (!Number.isFinite(condVal)) throw new Error('Invalid until expression');
+              if (condVal !== 0) break; // stop when expression becomes true/non-zero
+              const br = execList(t.body);
+              if (br === 'break') break; // stop loop
+              if (br === 'continue') continue; // re-evaluate condition
+            }
           }
           break;
         }
@@ -366,15 +377,29 @@ export async function interpretAsync(sourceOrTokens, options = /** @type {Interp
         break;
       }
       case 'REPEAT': {
-        let countVal = evalValue(t.count);
-        if (!Number.isFinite(countVal)) throw new Error('Invalid repeat count');
-        const times = Math.floor(countVal);
-        outer: for (let k=0;k<times;k++) {
-          for (const inner of t.body) {
-            const signal = await execToken(inner);
-            if (signal === 'break') break outer;
-            if (signal === 'continue') continue outer;
-            if (delayMs > 0) await new Promise(r=>setTimeout(r, delayMs));
+        if (t.mode === 'count') {
+          let countVal = evalValue(t.count);
+          if (!Number.isFinite(countVal)) throw new Error('Invalid repeat count');
+          const times = Math.floor(countVal);
+          outerCount: for (let k=0;k<times;k++) {
+            for (const inner of t.body) {
+              const signal = await execToken(inner);
+              if (signal === 'break') break outerCount;
+              if (signal === 'continue') continue outerCount;
+              if (delayMs > 0) await new Promise(r=>setTimeout(r, delayMs));
+            }
+          }
+        } else { // until mode
+          outerUntil: while (true) {
+            let condVal = evalValue(t.until);
+            if (!Number.isFinite(condVal)) throw new Error('Invalid until expression');
+            if (condVal !== 0) break; // condition met => stop
+            for (const inner of t.body) {
+              const signal = await execToken(inner);
+              if (signal === 'break') break outerUntil;
+              if (signal === 'continue') continue outerUntil; // re-check condition
+              if (delayMs > 0) await new Promise(r=>setTimeout(r, delayMs));
+            }
           }
         }
         return; // already delayed inside
@@ -499,7 +524,7 @@ export function createStepper(sourceOrTokens, options = /** @type {InterpretOpti
 
   // Execution cursors
   let mainIndex = 0;
-  /** @type {{ body: Token[]; index: number; remaining: number; kind:'repeat'|'if' }}[] */
+  /** @type {{ body: Token[]; index: number; remaining: number; kind:'repeat'|'if'; mode?:'count'|'until'; until?:any; breakFlag?:boolean }}[] */
   const frames = [];
   let finished = false;
 
@@ -538,10 +563,20 @@ export function createStepper(sourceOrTokens, options = /** @type {InterpretOpti
       if (frames.length) {
         const fr = frames[frames.length - 1];
         if (fr.index >= fr.body.length) { // body finished
-          fr.remaining--;
+          if (fr.kind === 'repeat' && fr.mode === 'until') {
+            // Only continue if condition still false and not broken
+            if (fr.breakFlag) { frames.pop(); continue; }
+            let condVal = evalValue(fr.until);
+            if (!Number.isFinite(condVal)) throw new Error('Invalid until expression');
+            if (condVal !== 0) { frames.pop(); continue; } // done
+            fr.index = 0; // another iteration
+            continue;
+          } else {
+            fr.remaining--;
             if (fr.remaining > 0) { fr.index = 0; continue; }
             frames.pop();
             continue; // move up level
+          }
         }
         return fr.body[fr.index++];
       } else {
@@ -563,10 +598,19 @@ export function createStepper(sourceOrTokens, options = /** @type {InterpretOpti
         break;
       }
       case 'REPEAT': {
-        let countVal = evalValue(tok.count);
-        if (!Number.isFinite(countVal)) throw new Error('Invalid repeat count');
-        const times = Math.floor(countVal);
-        if (times > 0) frames.push({ body: tok.body, index: 0, remaining: times, kind:'repeat' });
+        if (tok.mode === 'count') {
+          let countVal = evalValue(tok.count);
+          if (!Number.isFinite(countVal)) throw new Error('Invalid repeat count');
+          const times = Math.floor(countVal);
+          if (times > 0) frames.push({ body: tok.body, index: 0, remaining: times, kind:'repeat', mode:'count' });
+        } else { // until
+          // Evaluate condition first; only push frame if condition false
+          let condVal = evalValue(tok.until);
+          if (!Number.isFinite(condVal)) throw new Error('Invalid until expression');
+          if (condVal === 0) {
+            frames.push({ body: tok.body, index: 0, remaining: Infinity, kind:'repeat', mode:'until', until: tok.until });
+          }
+        }
         break; // repeat itself counts as a step
       }
       case 'IF': {
@@ -579,10 +623,13 @@ export function createStepper(sourceOrTokens, options = /** @type {InterpretOpti
         for (let i=frames.length-1;i>=0;i--) {
           const fr = frames[i];
           if (fr.kind === 'repeat') {
-            // Mark to end this iteration and loop count
-            fr.index = fr.body.length; fr.remaining = 1; // after decrement => 0
-            // Remove any frames above repeat (already iterating inside ifs)
-            frames.length = i+1; // truncate to this repeat frame only
+            fr.index = fr.body.length; // finish current body immediately
+            if (fr.mode === 'count') {
+              fr.remaining = 1; // after decrement => 0 => exit loop
+            } else if (fr.mode === 'until') {
+              fr.breakFlag = true; // signal to exit without further condition checks
+            }
+            frames.length = i+1; // truncate nested frames above
             break;
           }
         }
@@ -593,19 +640,10 @@ export function createStepper(sourceOrTokens, options = /** @type {InterpretOpti
         for (let i=frames.length-1;i>=0;i--) {
           const fr = frames[i];
           if (fr.kind === 'repeat') {
-            fr.index = fr.body.length; // finish this iteration, remaining unchanged
+            fr.index = fr.body.length; // finish this iteration; nextToken will handle continuation
             frames.length = i+1; // drop nested frames inside
             break;
           }
-        }
-        break;
-      }
-      case 'CONTINUE': {
-        // Fast-forward current body frame to end so repeat resumes next iteration
-        for (let i=frames.length-1;i>=0;i--) {
-          const fr = frames[i];
-          fr.index = fr.body.length; // complete this iteration
-          break;
         }
         break;
       }
