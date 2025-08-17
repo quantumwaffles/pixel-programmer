@@ -7,6 +7,7 @@
     import { EditorView, keymap, ViewPlugin, Decoration } from '@codemirror/view';
     import { Prec } from '@codemirror/state';
     import { indentWithTab } from '@codemirror/commands';
+    import { turtleExtension } from '$lib/turtle-lang/cm-language.js';
 
     const STORAGE_KEY = 'pixel-programmer:turtleScript';
 
@@ -99,7 +100,7 @@
         '&': { background: 'transparent' },
         '.cm-content': { padding: '8px' },
         '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace', lineHeight: '1.2' },
-        '.cm-error-line': { background: 'rgba(190,30,30,0.15)' }
+        '.cm-error-line': { background: 'rgba(190,30,30,0.15)' },
     }, { dark: true });
 
     let editorExtensions = $state([]);
@@ -111,6 +112,7 @@
                 { key: 'Ctrl-Enter', run: () => { handleRun(); return true; } }
             ])),
             baseTheme,
+            ...turtleExtension(),
             ...errorLineExtension(lexLine)
         ];
     });
