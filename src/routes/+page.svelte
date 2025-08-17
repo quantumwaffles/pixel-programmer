@@ -4,7 +4,7 @@
     import { parse } from "$lib/turtle-lang/lexer.js";
     import { interpret } from "$lib/turtle-lang/interpreter.js";
     import CodeMirrorEditor from 'svelte-codemirror-editor';
-    import { EditorView, keymap } from '@codemirror/view';
+    import { EditorView, keymap, ViewPlugin, Decoration } from '@codemirror/view';
     import { Prec } from '@codemirror/state';
     import { indentWithTab } from '@codemirror/commands';
 
@@ -59,16 +59,58 @@ f 6
     // Lexer output
     let tokens = $state([]);
     let lexError = $state(null);
+    let lexLine = $state(null);
+    let lexCol = $state(null);
 
     // Re-lex when code changes
     $effect(() => {
         try {
             tokens = parse(code);
-            lexError = null;
+            lexError = null; lexLine = null; lexCol = null;
         } catch (e) {
             lexError = e.message || String(e);
+            lexLine = e.line || null; lexCol = e.col || null;
             tokens = [];
         }
+    });
+
+    // Error highlight extension
+    function errorLineExtension(line) {
+        if (!line) return [];
+        const plugin = ViewPlugin.fromClass(class {
+            constructor(view){ this.decorations = this.make(view); }
+            make(view){
+                try {
+                    const ln = Math.min(line, view.state.doc.lines);
+                    const info = view.state.doc.line(ln);
+                    return Decoration.set([
+                        Decoration.line({ class: 'cm-error-line'}).range(info.from)
+                    ]);
+                } catch (_) { return Decoration.none; }
+            }
+            update(u){ if (u.docChanged) this.decorations = this.make(u.view); }
+        }, { decorations: v => v.decorations });
+        return [plugin];
+    }
+
+    const baseTheme = EditorView.theme({
+        '&': { background: 'transparent' },
+        '.cm-content': { padding: '8px' },
+        '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace', lineHeight: '1.2' },
+        '.cm-error-line': { background: 'rgba(190,30,30,0.15)' }
+    }, { dark: true });
+
+    let editorExtensions = $state([]);
+    $effect(() => {
+        editorExtensions = [
+            Prec.highest(keymap.of([
+                indentWithTab,
+                { key: 'Mod-Enter', run: () => { handleRun(); return true; } },
+                { key: 'Ctrl-Enter', run: () => { handleRun(); return true; } }
+            ])),
+            baseTheme,
+            ...errorLineExtension(lexLine)
+        ];
     });
 
     // (Tabs removed) Console display always shown below editor.
@@ -164,18 +206,7 @@ f 6
                         <CodeMirrorEditor
                             class="font-mono text-sm leading-snug h-full"
                             bind:value={code}
-                            extensions={[
-                                Prec.highest(keymap.of([
-                                    indentWithTab,
-                                    { key: 'Mod-Enter', run: () => { handleRun(); return true; } },
-                                    { key: 'Ctrl-Enter', run: () => { handleRun(); return true; } }
-                                ])),
-                                EditorView.theme({
-                                    '&': { background: 'transparent' },
-                                    '.cm-content': { padding: '8px' },
-                                    '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace', lineHeight: '1.2' }
-                                }, { dark: true })
-                            ]}
+                            extensions={editorExtensions}
                             placeholder={'forward 50\nback 10\nleft 90\nright 45\npen down\nhsv +10 _ 50'}
                         />
                     </div>
