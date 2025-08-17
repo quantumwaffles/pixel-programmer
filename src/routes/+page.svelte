@@ -2,7 +2,7 @@
     import P5Canvas from "$lib/P5Canvas.svelte";
     import sketch from "$lib/sketches/pixel-canvas.js";
     import { parse } from "$lib/turtle-lang/lexer.js";
-    import { interpret } from "$lib/turtle-lang/interpreter.js";
+    import { interpret, createStepper } from "$lib/turtle-lang/interpreter.js";
     import CodeMirrorEditor from 'svelte-codemirror-editor';
     import { EditorView, keymap, ViewPlugin, Decoration } from '@codemirror/view';
     import { Prec } from '@codemirror/state';
@@ -125,6 +125,21 @@
     let lastRunStats = $state(null);
     let lastVars = $state({});
     let autoRun = $state(false);
+    // Delay between turtle commands (ms). 0 = instant. Controlled via non-linear slider.
+    let stepDelay = $state(0);
+    // Raw slider value 0..100 mapped exponentially to 0..500ms
+    let delaySliderRaw = $state(0);
+    function mapSliderToDelay(raw){ const x = raw / 100; return Math.round(500 * Math.pow(x,3)); }
+    function mapDelayToSlider(delay){ if (delay <= 0) return 0; const x = Math.cbrt(delay / 500); return Math.round(x * 100); }
+    // Keep stepDelay in sync when raw changes
+    $effect(()=> { stepDelay = mapSliderToDelay(delaySliderRaw); });
+    let runningAsync = $state(false);
+    let cancelRun = null;
+    let rafId = null;
+    // Safety: cap number of interpreter steps processed per animation frame
+    const MAX_STEPS_PER_FRAME = 400; // adjust if needed
+    // Follow pen: keep pen centered while executing (mainly effective with delay > 0)
+    let followPen = $state(false);
     let _runTimer = null;
     let _saveTimer = null;
     let lastLoaded = false;
@@ -142,30 +157,70 @@
         lastLoaded = true;
     });
 
-    function handleRun() {
+    async function handleRun() {
         runError = null; lastRunStats = null;
         if (!canvasInst) { runError = 'Canvas not ready'; return; }
         try {
             // Clear previous pixels
             canvasInst.clearPixels && canvasInst.clearPixels();
-            // Interpret script
-            const res = interpret(code, {
-                canvas: canvasInst,
-                startX: Math.floor(canvasInst.width / (2 * canvasInst.getPixelSize())),
-                startY: Math.floor(canvasInst.height / (2 * canvasInst.getPixelSize())),
-                initialPenDown: true
-                // No width/height => unlimited movement
-            });
-            lastRunStats = {
-                operations: res.operations.length,
-                finalX: res.finalX,
-                finalY: res.finalY,
-                heading: res.finalHeading,
-                color: res.color
-            };
-            lastVars = res.variables || {};
+            if (stepDelay <= 0) {
+                const res = interpret(code, {
+                    canvas: canvasInst,
+                    startX: Math.floor(canvasInst.width / (2 * canvasInst.getPixelSize())),
+                    startY: Math.floor(canvasInst.height / (2 * canvasInst.getPixelSize())),
+                    initialPenDown: true
+                });
+                if (followPen) canvasInst.centerOnPen && canvasInst.centerOnPen();
+                lastRunStats = {
+                    operations: res.operations.length,
+                    finalX: res.finalX,
+                    finalY: res.finalY,
+                    heading: res.finalHeading,
+                    color: res.color
+                };
+                lastVars = res.variables || {};
+            } else {
+                runningAsync = true;
+                let cancelled = false;
+                cancelRun = () => { cancelled = true; if (rafId) cancelAnimationFrame(rafId); runningAsync=false; };
+                const startX = Math.floor(canvasInst.width / (2 * canvasInst.getPixelSize()));
+                const startY = Math.floor(canvasInst.height / (2 * canvasInst.getPixelSize()));
+                const stepper = createStepper(parse(code), { canvas: canvasInst, startX, startY, initialPenDown: true });
+                let acc = 0; // accumulated ms
+                let lastTs = performance.now();
+                const target = () => stepDelay; // ms per step average
+                function frame(ts){
+                    if (cancelled) return;
+                    const dt = ts - lastTs; lastTs = ts; acc += dt;
+                    // execute as many steps as fit in accumulated time (avoid large backlog)
+                    const per = target();
+                    let stepsThisFrame = 0;
+                    if (per <= 0) {
+                        while(!stepper.done() && stepsThisFrame < MAX_STEPS_PER_FRAME) { stepper.step(); stepsThisFrame++; if (followPen) canvasInst.centerOnPen && canvasInst.centerOnPen(); }
+                    } else {
+                        while(acc >= per && !stepper.done() && stepsThisFrame < MAX_STEPS_PER_FRAME) { stepper.step(); acc -= per; stepsThisFrame++; if (followPen) canvasInst.centerOnPen && canvasInst.centerOnPen(); }
+                    }
+                    if (stepper.done()) {
+                        const res = stepper.result();
+                        if (res) {
+                            lastRunStats = {
+                                operations: res.operations.length,
+                                finalX: res.finalX,
+                                finalY: res.finalY,
+                                heading: res.finalHeading,
+                                color: res.color
+                            };
+                            lastVars = res.variables || {};
+                        }
+                        runningAsync = false; cancelRun = null; rafId = null; return;
+                    }
+                    rafId = requestAnimationFrame(frame);
+                }
+                rafId = requestAnimationFrame(frame);
+            }
         } catch (e) {
             runError = e.message || String(e);
+            runningAsync = false; cancelRun = null;
         }
     }
 
@@ -215,13 +270,25 @@
                     </div>
                     <div class="pt-3 flex flex-col gap-2">
                         <div class="flex flex-wrap gap-2 items-center">
-                            <button class="btn btn-primary btn-sm" onclick={handleRun}>Run</button>
+                            <button class="btn btn-primary btn-sm" onclick={handleRun} disabled={runningAsync}>Run</button>
+                            {#if runningAsync}
+                                <button class="btn btn-warning btn-sm" onclick={() => { cancelRun?.(); runningAsync=false; }}>Stop</button>
+                            {/if}
                             <button class="btn btn-outline btn-sm" onclick={() => { canvasInst?.clearPixels?.(); lastRunStats=null; runError=null; }}>Clear</button>
                             <label class="label cursor-pointer gap-1 ml-auto text-xs">
                                 <span class="text-base-content/60">Auto</span>
                                 <input type="checkbox" class="toggle toggle-xs" checked={autoRun} onchange={(e)=> autoRun = e.currentTarget.checked} />
                             </label>
                         </div>
+                        <div class="flex items-center gap-2 text-[10px] text-base-content/60">
+                            <span>Delay</span>
+                            <input type="range" min="0" max="100" step="1" value={delaySliderRaw} oninput={(e)=> delaySliderRaw = Number(e.currentTarget.value)} class="range range-xs" />
+                            <span class="w-14 text-right">{stepDelay}ms</span>
+                        </div>
+                        <label class="label cursor-pointer gap-2 text-[10px] text-base-content/60 w-fit">
+                            <input type="checkbox" class="checkbox checkbox-xs" checked={followPen} onchange={(e)=> followPen = e.currentTarget.checked} />
+                            <span>Follow pen</span>
+                        </label>
                         {#if runError}
                             <div class="alert alert-error py-1 min-h-0 h-auto text-xs">{runError}</div>
                         {:else if lastRunStats}
