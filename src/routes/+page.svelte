@@ -2,6 +2,7 @@
     import P5Canvas from "$lib/P5Canvas.svelte";
     import sketch from "$lib/sketches/pixel-canvas.js";
     import { parse } from "$lib/turtle-lang/lexer.js";
+    import { interpret } from "$lib/turtle-lang/interpreter.js";
 
     // Editor code content
     let code = $state(`// Turtle code will go here soon.\n// Try commands: forward 50\npen down\nleft 90\nhsv +10 _ 50`);
@@ -25,6 +26,38 @@
     });
 
     function setTab(tab) { activeTab = tab; }
+
+    // p5 instance reference
+    let canvasInst = $state(null);
+    let runError = $state(null);
+    let lastRunStats = $state(null);
+
+    function handleRun() {
+        runError = null; lastRunStats = null;
+        if (!canvasInst) { runError = 'Canvas not ready'; return; }
+        try {
+            // Clear previous pixels
+            canvasInst.clearPixels && canvasInst.clearPixels();
+            // Interpret script
+            const res = interpret(code, {
+                canvas: canvasInst,
+                startX: Math.floor(canvasInst.width / (2 * canvasInst.getPixelSize())),
+                startY: Math.floor(canvasInst.height / (2 * canvasInst.getPixelSize())),
+                initialPenDown: true,
+                width: Math.floor(canvasInst.width / canvasInst.getPixelSize()),
+                height: Math.floor(canvasInst.height / canvasInst.getPixelSize())
+            });
+            lastRunStats = {
+                operations: res.operations.length,
+                finalX: res.finalX,
+                finalY: res.finalY,
+                heading: res.finalHeading,
+                color: res.color
+            };
+        } catch (e) {
+            runError = e.message || String(e);
+        }
+    }
 </script>
 
 <section class="min-h-screen flex flex-col items-center gap-10 py-10 px-4 bg-gradient-to-br from-base-200 via-base-100 to-base-200">
@@ -54,9 +87,23 @@
                         <label class="form-control w-full">
                             <textarea bind:value={code} class="textarea textarea-bordered font-mono text-sm leading-snug min-h-[400px] resize-y" placeholder="forward 50\nback 10\nleft 90\nright 45\npen down\nhsv +10 _ 50"></textarea>
                         </label>
-                        <div class="mt-3 text-xs text-base-content/50 space-y-1">
-                            <p>Live tokenization active.</p>
-                            <p class="italic">Supported: forward, back, left, right, pen up|down, hsv.</p>
+                        <div class="mt-3 flex flex-col gap-2">
+                            <div class="flex gap-2">
+                                <button class="btn btn-primary btn-sm" onclick={handleRun}>Run</button>
+                                <button class="btn btn-outline btn-sm" onclick={() => { canvasInst?.clearPixels?.(); lastRunStats=null; runError=null; }}>Clear</button>
+                                <button class="btn btn-ghost btn-sm" onclick={() => setTab('tokens')}>View Tokens</button>
+                            </div>
+                            {#if runError}
+                                <div class="alert alert-error py-1 min-h-0 h-auto text-xs">{runError}</div>
+                            {:else if lastRunStats}
+                                <div class="text-xs text-base-content/60">
+                                    <span class="font-semibold">Done.</span> Ops: {lastRunStats.operations}, Pos: ({lastRunStats.finalX},{lastRunStats.finalY}), Heading: {lastRunStats.heading.toFixed(1)}°, HSV: {Math.round(lastRunStats.color.h)}/{Math.round(lastRunStats.color.s)}/{Math.round(lastRunStats.color.v)}
+                                </div>
+                            {/if}
+                            <div class="text-xs text-base-content/50 space-y-1">
+                                <p>Live tokenization active.</p>
+                                <p class="italic">Supported: forward, back, left, right, pen up|down, hsv.</p>
+                            </div>
                         </div>
                     {:else}
                         {#if lexError}
@@ -82,7 +129,7 @@
                     <h2 class="card-title justify-center text-primary/80 tracking-wide">Preview Window</h2>
                     <div class="mockup-window border bg-base-300">
                         <div class="flex justify-center items-center bg-base-200 p-4">
-                            <P5Canvas {sketch} />
+                            <P5Canvas {sketch} onInstance={(inst)=> canvasInst = inst} />
                         </div>
                     </div>
                     <div class="text-xs text-base-content/50 text-center">

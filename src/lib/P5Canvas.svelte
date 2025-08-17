@@ -2,7 +2,7 @@
   import p5 from 'p5';
 
   // Props via runes ($props) for Svelte 5
-  let { sketch, width = 400, height = 400 } = $props();
+  let { sketch, width = 400, height = 400, onInstance = null } = $props();
 
   /** @type {HTMLElement | null} */
   let canvasParent;
@@ -20,13 +20,15 @@
       p5Instance = null;
     }
 
-    const inst = new p5(sketch, canvasParent);
+  const inst = new p5(sketch, canvasParent);
     inst.resizeCanvas(width, height);
     p5Instance = inst;
+  if (typeof onInstance === 'function') onInstance(inst);
 
     // Cleanup when dependencies change or component destroyed
     return () => {
-      inst.remove();
+  if (typeof onInstance === 'function') onInstance(null);
+  inst.remove();
       if (p5Instance === inst) p5Instance = null;
     };
   });

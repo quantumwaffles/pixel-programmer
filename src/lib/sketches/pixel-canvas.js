@@ -14,6 +14,8 @@ export default function sketch(p) {
     // Colors
     let bgColor = p.color(24, 24, 28); // dark background
     let gridColor = p.color(60);       // subtle mid-gray grid
+    // Painted pixels: Map key "x,y" -> {h,s,v}
+    const painted = new Map();
 
     p.setup = function () {
     p.createCanvas(400, 400);
@@ -42,6 +44,20 @@ export default function sketch(p) {
                 p.line(0, y, p.width, y);
             }
             p.pop();
+        }
+
+        // Draw painted pixels
+        if (painted.size) {
+            p.noStroke();
+            for (const [key, hsv] of painted) {
+                const [cx, cy] = key.split(',').map(Number);
+                // Convert HSV (0..360,0..100,0..100) to RGB using p5's colorMode
+                p.push();
+                p.colorMode(p.HSB, 360, 100, 100);
+                p.fill(hsv.h, hsv.s, hsv.v);
+                p.rect(cx * pixelSize, cy * pixelSize, pixelSize, pixelSize);
+                p.pop();
+            }
         }
 
         // Determine current pen (mouse) cell
@@ -99,4 +115,12 @@ export default function sketch(p) {
     p.setShowGrid = function (v) { showGrid = !!v; };
     /** Adjust grid color */
     p.setGridColor = function (r, g, b, a) { gridColor = p.color(r, g, b, a); };
+    /** Draw / set a pixel color via HSV (expects object with h,s,v) */
+    p.drawPixel = function (x, y, hsv) {
+        painted.set(`${Math.round(x)},${Math.round(y)}` , { h: hsv.h, s: hsv.s, v: hsv.v });
+    };
+    /** Clear all painted pixels */
+    p.clearPixels = function () { painted.clear(); };
+    /** Get current pixel size */
+    p.getPixelSize = function () { return pixelSize; };
 }
