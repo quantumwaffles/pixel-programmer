@@ -4,8 +4,10 @@
     import { parse } from "$lib/turtle-lang/lexer.js";
     import { interpret } from "$lib/turtle-lang/interpreter.js";
 
-    // Editor code content
-        let code = $state(`// Turtle demo script exercising all features including repeat
+    const STORAGE_KEY = 'pixel-programmer:turtleScript';
+
+    // Editor code content (may be overridden by localStorage on client)
+    let code = $state(`// Turtle demo script exercising all features including repeat
 // Abbreviations (f,r,l,b) hsv absolute/offset/ignore and nested repeat blocks
 
 pen down
@@ -73,6 +75,21 @@ f 6
     let lastRunStats = $state(null);
     let autoRun = $state(false);
     let _runTimer = null;
+    let _saveTimer = null;
+    let lastLoaded = false;
+
+    // Load from localStorage (once, client only)
+    $effect(() => {
+        if (lastLoaded) return;
+        if (typeof window === 'undefined') return; // SSR
+        try {
+            const saved = window.localStorage.getItem(STORAGE_KEY);
+            if (saved && typeof saved === 'string') {
+                code = saved;
+            }
+        } catch (_) { /* ignore */ }
+        lastLoaded = true;
+    });
 
     function handleRun() {
         runError = null; lastRunStats = null;
@@ -110,6 +127,17 @@ f 6
         if (_runTimer) clearTimeout(_runTimer);
         _runTimer = setTimeout(() => { handleRun(); }, 300);
         return () => { if (_runTimer) clearTimeout(_runTimer); };
+    });
+
+    // Autosave effect (debounced) referencing code
+    $effect(() => {
+        const _codeToSave = code;
+        if (typeof window === 'undefined') return;
+        if (_saveTimer) clearTimeout(_saveTimer);
+        _saveTimer = setTimeout(() => {
+            try { window.localStorage.setItem(STORAGE_KEY, _codeToSave); } catch (_) { /* ignore */ }
+        }, 400);
+        return () => { if (_saveTimer) clearTimeout(_saveTimer); };
     });
 </script>
 
