@@ -246,7 +246,8 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
     finalHeading: dir,
     penDown,
     color,
-    operations: record ? ops : []
+  operations: record ? ops : [],
+  variables: { ...vars }
   };
 }
 

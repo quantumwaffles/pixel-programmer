@@ -77,6 +77,7 @@ f 6
     let canvasInst = $state(null);
     let runError = $state(null);
     let lastRunStats = $state(null);
+    let lastVars = $state({});
     let autoRun = $state(false);
     let _runTimer = null;
     let _saveTimer = null;
@@ -117,6 +118,7 @@ f 6
                 heading: res.finalHeading,
                 color: res.color
             };
+            lastVars = res.variables || {};
         } catch (e) {
             runError = e.message || String(e);
         }
@@ -213,7 +215,13 @@ f 6
                     {#if lexError}
                         <div class="alert alert-error py-1 min-h-0 h-auto text-xs">{lexError}</div>
                     {:else}
-                        <pre class="bg-base-300/60 rounded p-2 text-[11px] leading-tight overflow-auto max-h-[180px]">{JSON.stringify(tokens, null, 2)}</pre>
+                        <pre class="bg-base-300/60 rounded p-2 text-[11px] leading-tight overflow-auto max-h-[120px]">{JSON.stringify(tokens, null, 2)}</pre>
+                        {#if Object.keys(lastVars).length}
+                            <div class="mt-2">
+                                <div class="text-[10px] uppercase tracking-wide text-base-content/50 mb-1">Variables</div>
+                                <pre class="bg-base-300/40 rounded p-2 text-[11px] leading-tight overflow-auto max-h-[80px]">{JSON.stringify(lastVars, null, 2)}</pre>
+                            </div>
+                        {/if}
                     {/if}
                     <div class="mt-2 text-[10px] text-base-content/50 space-y-1">
                         <p>Supported: forward/back/left/right (abbr), pen up|down, hsv, repeat.</p>
