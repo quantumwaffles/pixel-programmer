@@ -11,50 +11,52 @@
     const STORAGE_KEY = 'pixel-programmer:turtleScript';
 
     // Editor code content (may be overridden by localStorage on client)
-    let code = $state(`// Turtle demo script exercising all features including repeat
-// Abbreviations (f,r,l,b) hsv absolute/offset/ignore and nested repeat blocks
+    let code = $state(`// Turtle demo script exercising all features including indentation-based repeat blocks
+    // Abbreviations (f,r,l,b) hsv absolute/offset/ignore and nested repeat blocks
 
-pen down
-hsv 30 90 90
+    pen down
+    hsv 30 90 90
 
-// Draw a square using repeat (size 15)
-repeat 4 {
-    f 15
-    r 90
-}
-
-// Star-like pattern (rotate & change hue)
-repeat 6 {
-    hsv +60 _ _    // shift hue
-    f 10
-    l 60
-}
-
-// Move without drawing
-pen up
-f 5
-pen down
-
-// Nested repeats: a tiny grid stamp 3x repeated 3 times with hue shift
-repeat 3 {
-    hsv +40 -10 +0
-    repeat 3 {
-        f 4
+    // Draw a square using repeat (size 15)
+    repeat 4:
+        f 15
         r 90
-        f 4
+        f 15
         r 90
-        f 4
+        f 15
         r 90
-        f 4
-        r 90 // tiny square
-        r 120 // reorient
-    }
-}
+        f 15
+        r 90
 
-// Final color tweak: lower value only
-hsv _ _ -30
-f 6
-// End of demo`);
+    // Star-like pattern (rotate & change hue)
+    repeat 6:
+        hsv +60 _ _    // shift hue
+        f 10
+        l 60
+
+    // Move without drawing
+    pen up
+    f 5
+    pen down
+
+    // Nested repeats: a tiny grid stamp 3x repeated 3 times with hue shift
+    repeat 3:
+        hsv +40 -10 +0
+        repeat 3:
+            f 4
+            r 90
+            f 4
+            r 90
+            f 4
+            r 90
+            f 4
+            r 90 // tiny square
+            r 120 // reorient
+
+    // Final color tweak: lower value only
+    hsv _ _ -30
+    f 6
+    // End of demo`);
 
     // Lexer output
     let tokens = $state([]);
@@ -149,9 +151,8 @@ f 6
                 canvas: canvasInst,
                 startX: Math.floor(canvasInst.width / (2 * canvasInst.getPixelSize())),
                 startY: Math.floor(canvasInst.height / (2 * canvasInst.getPixelSize())),
-                initialPenDown: true,
-                width: Math.floor(canvasInst.width / canvasInst.getPixelSize()),
-                height: Math.floor(canvasInst.height / canvasInst.getPixelSize())
+                initialPenDown: true
+                // No width/height => unlimited movement
             });
             lastRunStats = {
                 operations: res.operations.length,
@@ -268,8 +269,9 @@ f 6
                 <P5Canvas {sketch} onInstance={(inst)=> canvasInst = inst} />
             </div>
         </div>
-        <div class="text-xs text-base-content/50 text-center pb-2">
-            Powered by <span class="font-semibold text-secondary">p5.js</span>
+        <div class="text-xs text-base-content/60 flex items-center justify-center gap-4 pb-2">
+            <button class="btn btn-outline btn-xs" onclick={() => canvasInst?.centerOnPen?.()}>Center View</button>
+            <div>Powered by <span class="font-semibold text-secondary">p5.js</span></div>
         </div>
     </div>
 </section>

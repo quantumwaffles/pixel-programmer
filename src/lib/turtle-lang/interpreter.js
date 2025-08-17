@@ -144,11 +144,7 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
     return NaN;
   }
 
-  // Helper to clamp position to bounds if given
-  function clampPos() {
-    if (typeof width === 'number') x = clamp(x,0,width-1);
-    if (typeof height === 'number') y = clamp(y,0,height-1);
-  }
+  // Removed clampPos: allow unbounded movement when width/height omitted.
 
   // Sync canvas pen location/state if provided
   function syncCanvasPen() {
@@ -227,7 +223,7 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
             }
           });
         }
-        x = targetX; y = targetY; clampPos();
+  x = targetX; y = targetY; // no clamp => infinite plane
         syncCanvasPen();
         if (record) ops.push({ op:'move', x:Math.round(x), y:Math.round(y) });
         break;

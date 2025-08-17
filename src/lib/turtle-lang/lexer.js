@@ -7,7 +7,8 @@
  *   right n          - rotate right n units (r, ri, rig, righ, right)
  *   pen up|down      - raise or lower the pen
  *   hsv h s v        - set HSV color; each param: offset (+n|-n), absolute (n), or '_' ignore
- *   repeat N { ... } - repeat enclosed block N times (blocks can nest)
+ *   repeat N:        - start an indented block repeated N times (ends when indentation decreases)
+ *                     (Old { } block style removed in favor of Python-like indentation)
  *   var name = value - declare/assign numeric variable (value can be number / variable / arithmetic expression)
  *   name = value      - re-assign existing variable
  *   Simple arithmetic expressions allowed anywhere a single numeric argument is expected:
@@ -66,18 +67,25 @@ function ident(s) { return s.toLowerCase(); }
 
 /** Split source into trimmed, comment-stripped logical lines */
 function preprocessLines(source) {
-	return source
-		.replace(/\r\n?/g, '\n')
-		.split('\n')
-		.map(l => {
-			// Remove comments starting with # or //
-			const hash = l.indexOf('#');
-			const slashes = l.indexOf('//');
-			let cut = l.length;
-			if (hash !== -1) cut = Math.min(cut, hash);
-			if (slashes !== -1) cut = Math.min(cut, slashes);
-			return l.slice(0, cut).trim();
-		});
+	const rawLines = source.replace(/\r\n?/g,'\n').split('\n');
+	return rawLines.map(line => {
+		let i=0; let indent=0;
+		while (i < line.length) {
+			const ch = line[i];
+			if (ch === ' ') { indent++; i++; continue; }
+			if (ch === '\t') { indent += 4; i++; continue; }
+			break;
+		}
+		let content = line.slice(i);
+		// Strip comments (# or //) but ignore if inside expression (no string literals so fine)
+		const hash = content.indexOf('#');
+		const slashes = content.indexOf('//');
+		let cut = content.length;
+		if (hash !== -1) cut = Math.min(cut, hash);
+		if (slashes !== -1) cut = Math.min(cut, slashes);
+		content = content.slice(0, cut).trimEnd();
+		return { indent, content: content.trimStart() };
+	});
 }
 
 function resolveAbbrev(word) {
@@ -169,59 +177,43 @@ export function parse(source) {
 	const lines = preprocessLines(source);
 	let i = 0;
 
-	function parseBlock() {
+	function parseBlock(parentIndent) {
 		/** @type {any[]} */
 		const out = [];
 		while (i < lines.length) {
-			let line = lines[i];
-			if (!line) { i++; continue; }
-			if (line === '}') { i++; break; } // end of current block
-
-			const parts = line.split(/\s+/);
+			const { indent, content } = lines[i];
+			if (!content) { i++; continue; }
+			if (indent <= parentIndent) break; // block ended
+			const parts = content.split(/\s+/);
 			let headRaw = ident(parts[0]);
 			headRaw = resolveAbbrev(headRaw);
 
 			if (headRaw === 'var') {
-				// Syntax: var name = value
-				if (parts.length < 4 || parts[2] !== '=') throw syntaxError(`Invalid var declaration. Use: var name = value`, i, 0);
+				if (parts.length < 4 || parts[2] !== '=') throw syntaxError('Invalid var declaration. Use: var name = value', i, 0);
 				const name = ident(parts[1]);
-				if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw syntaxError(`Invalid variable name: ${parts[1]}`, i, line.indexOf(parts[1]));
-				const valueToken = parseValueExpression(line.slice(line.indexOf(parts[3])), i, line.indexOf(parts[3]));
+				if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw syntaxError(`Invalid variable name: ${parts[1]}`, i, 0);
+				const valueToken = parseValueExpression(content.slice(content.indexOf(parts[3])), i, 0);
 				out.push({ type: 'VAR', name, value: valueToken, reassign: false });
-				i++;
-				continue;
+				i++; continue;
 			}
 
-			// Re-assignment: identifier = value
 			if (/^[a-z_][a-z0-9_]*$/i.test(parts[0]) && parts.length >= 3 && parts[1] === '=') {
 				const name = ident(parts[0]);
-				const rhsIndex = line.indexOf('=') + 1;
-				const valueToken = parseValueExpression(line.slice(rhsIndex), i, rhsIndex);
+				const rhsIndex = content.indexOf('=') + 1;
+				const valueToken = parseValueExpression(content.slice(rhsIndex), i, rhsIndex);
 				out.push({ type: 'VAR', name, value: valueToken, reassign: true });
-				i++;
-				continue;
+				i++; continue;
 			}
 
 			if (headRaw === 'repeat') {
-				if (parts.length < 2) throw syntaxError('repeat requires a count', i, line.length);
-				let countPart = line.slice(line.indexOf(parts[1]));
-				// Remove trailing { if inline
-				const hasBrace = /{\s*$/.test(line);
-				if (hasBrace) countPart = countPart.replace(/\{\s*$/,'').trim();
-				const countExpr = parseValueExpression(countPart, i, line.indexOf(parts[1]));
-				// Detect inline brace
-				let hasBrace2 = /{\s*$/.test(line);
-				i++;
-				if (!hasBrace2) {
-					// Skip blank lines to find a '{'
-					while (i < lines.length && lines[i].trim() === '') i++;
-					if (i >= lines.length || lines[i] !== '{') throw syntaxError('Expected { after repeat count', i, 0);
-					i++; // consume '{'
-				}
-				else {
-					// If line ends with '{', we already consumed line including brace
-				}
-				const body = parseBlock();
+				// Expect trailing ':'
+				const colonPos = content.lastIndexOf(':');
+				if (colonPos === -1) throw syntaxError("Expected ':' after repeat count", i, 0);
+				const exprStr = content.slice(content.indexOf(parts[1]), colonPos).trim();
+				if (!exprStr) throw syntaxError('repeat requires a count', i, 0);
+				const countExpr = parseValueExpression(exprStr, i, 0);
+				i++; // advance to first body line
+				const body = parseBlock(indent); // lines with greater indent
 				out.push({ type: 'REPEAT', count: countExpr, body });
 				continue;
 			}
@@ -229,46 +221,36 @@ export function parse(source) {
 			switch (headRaw) {
 				case 'forward':
 				case 'back': {
-					if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, line.length);
-					const argStr = line.slice(line.indexOf(parts[1]));
-					const value = parseValueExpression(argStr, i, line.indexOf(parts[1]));
+					if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, 0);
+					const value = parseValueExpression(content.slice(content.indexOf(parts[1])), i, 0);
 					out.push({ type: 'MOVE', direction: headRaw, value });
-					i++;
-					break;
+					i++; break;
 				}
 				case 'left':
 				case 'right': {
-					if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, line.length);
-					const argStr = line.slice(line.indexOf(parts[1]));
-					const value = parseValueExpression(argStr, i, line.indexOf(parts[1]));
+					if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, 0);
+					const value = parseValueExpression(content.slice(content.indexOf(parts[1])), i, 0);
 					out.push({ type: 'TURN', direction: headRaw, value });
-					i++;
-					break;
+					i++; break;
 				}
 				case 'pen': {
-					if (parts.length !== 2) throw syntaxError('pen requires one argument: up|down', i, line.length);
+					if (parts.length !== 2) throw syntaxError('pen requires one argument: up|down', i, 0);
 					const state = ident(parts[1]);
-					if (state !== 'up' && state !== 'down') throw syntaxError(`Invalid pen state: ${parts[1]}`, i, line.indexOf(parts[1]));
+					if (state !== 'up' && state !== 'down') throw syntaxError('Invalid pen state', i, 0);
 					out.push({ type: 'PEN', state });
-					i++;
-					break;
+					i++; break;
 				}
 				case 'hsv': {
-					if (parts.length !== 4) throw syntaxError('hsv requires 3 params: h s v', i, line.length);
+					if (parts.length !== 4) throw syntaxError('hsv requires 3 params: h s v', i, 0);
 					try {
 						const h = parseHSVParam(parts[1]);
 						const s = parseHSVParam(parts[2]);
 						const v = parseHSVParam(parts[3]);
 						out.push({ type: 'HSV', h, s, v });
 					} catch (e) {
-						throw syntaxError(e.message, i, line.indexOf('hsv'));
+						throw syntaxError(e.message, i, 0);
 					}
-					i++;
-					break;
-				}
-				case '{': {
-					// Stray opening brace not after repeat
-					throw syntaxError('Unexpected {', i, 0);
+					i++; break;
 				}
 				default:
 					throw syntaxError(`Unknown command: ${parts[0]}`, i, 0);
@@ -277,8 +259,7 @@ export function parse(source) {
 		return out;
 	}
 
-	const tokens = parseBlock();
-	return tokens;
+	return parseBlock(-1);
 }
 
 // Backwards compatibility shim
