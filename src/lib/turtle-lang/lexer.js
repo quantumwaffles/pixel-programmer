@@ -8,6 +8,9 @@
  *   pen up|down      - raise or lower the pen
  *   hsv h s v        - set HSV color; each param: offset (+n|-n), absolute (n), or '_' ignore
  *   repeat N:        - start an indented block repeated N times (ends when indentation decreases)
+ *   if EXPR:         - conditionally execute an indented block when expression is non-zero
+ *   break            - exit the nearest enclosing repeat loop
+ *   continue         - skip to next iteration of nearest enclosing repeat loop
  *                     (Old { } block style removed in favor of Python-like indentation)
  *   var name = value - declare/assign numeric variable (value can be number / variable / arithmetic expression)
  *   name = value      - re-assign existing variable
@@ -113,7 +116,16 @@ function tokenizeExpr(str) {
 	while (i < str.length) {
 		const ch = str[i];
 		if (/\s/.test(ch)) { i++; continue; }
-		if (/[()+\-*\/]/.test(ch)) { tokens.push({ type: 'op', value: ch }); i++; continue; }
+		// Multi / single char operators (comparison + arithmetic incl. modulus)
+		if (/[()+\-*\/%<>!=]/.test(ch)) {
+			// attempt to read two-char comparison operators
+			const two = str.slice(i,i+2);
+			if (['==','!=','<=','>='].includes(two)) { tokens.push({ type:'op', value: two }); i+=2; continue; }
+			if (/[<>]/.test(ch)) { tokens.push({ type:'op', value: ch }); i++; continue; }
+			if (/[()+\-*\/%]/.test(ch)) { tokens.push({ type:'op', value: ch }); i++; continue; }
+			// lone ! or = not allowed in expressions
+			if (ch === '!' || ch === '=') throw new Error(`Unexpected '${ch}' in expression`);
+		}
 		if (/[0-9.]/.test(ch)) {
 			let start=i; while (i<str.length && /[0-9._]/.test(str[i])) i++; // allow underscores ignored
 			const raw = str.slice(start,i).replace(/_/g,'');
@@ -154,7 +166,7 @@ function parseExpressionString(str, line, col) {
 	}
 	function parseMulDiv(){
 		let node = parsePrimary();
-		while (true){ const t=peek(); if(t && t.type==='op' && (t.value==='*'||t.value==='/')){ consume(); node={ kind:'bin', op:t.value, left:node, right:parsePrimary() }; } else break; }
+		while (true){ const t=peek(); if(t && t.type==='op' && (t.value==='*'||t.value==='/'||t.value==='%')){ consume(); node={ kind:'bin', op:t.value, left:node, right:parsePrimary() }; } else break; }
 		return node;
 	}
 	function parseAddSub(){
@@ -162,7 +174,12 @@ function parseExpressionString(str, line, col) {
 		while (true){ const t=peek(); if(t && t.type==='op' && (t.value==='+'||t.value==='-')){ consume(); node={ kind:'bin', op:t.value, left:node, right:parseMulDiv() }; } else break; }
 		return node;
 	}
-	const ast = parseAddSub();
+	function parseComparison(){
+		let node = parseAddSub();
+		while (true){ const t=peek(); if(t && t.type==='op' && ['==','!=','<','>','<=','>='].includes(t.value)){ consume(); node={ kind:'bin', op:t.value, left:node, right:parseAddSub() }; } else break; }
+		return node;
+	}
+	const ast = parseComparison();
 	if (pos !== tokens.length) throw syntaxError('Unexpected extra tokens in expression', line, col);
 	return { expr: ast };
 }
@@ -216,6 +233,30 @@ export function parse(source) {
 				const body = parseBlock(indent); // lines with greater indent
 				out.push({ type: 'REPEAT', count: countExpr, body });
 				continue;
+			}
+
+			if (headRaw === 'if') {
+				const colonPos = content.lastIndexOf(':');
+				if (colonPos === -1) throw syntaxError("Expected ':' after if expression", i, 0);
+				const exprStr = content.slice(content.indexOf(parts[1]), colonPos).trim();
+				if (!exprStr) throw syntaxError('if requires an expression', i, 0);
+				const testExpr = parseValueExpression(exprStr, i, 0);
+				i++;
+				const body = parseBlock(indent);
+				out.push({ type: 'IF', test: testExpr, body });
+				continue;
+			}
+
+			if (headRaw === 'break') {
+				if (parts.length !== 1) throw syntaxError('break takes no arguments', i, 0);
+				out.push({ type: 'BREAK' });
+				i++; continue;
+			}
+
+			if (headRaw === 'continue') {
+				if (parts.length !== 1) throw syntaxError('continue takes no arguments', i, 0);
+				out.push({ type: 'CONTINUE' });
+				i++; continue;
 			}
 
 			switch (headRaw) {

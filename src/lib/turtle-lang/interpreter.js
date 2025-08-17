@@ -11,7 +11,10 @@ import { parse } from './lexer.js';
 /** @typedef {{type:'HSV',h:HSVParam,s:HSVParam,v:HSVParam}} HSVTok */
 /** @typedef {{type:'VAR',name:string,value:any,reassign:boolean}} VarTok */
 /** @typedef {{type:'REPEAT',count:any,body:Token[]}} RepeatTok */
-/** @typedef {MoveTok|TurnTok|PenTok|HSVTok|VarTok|RepeatTok} Token */
+/** @typedef {{type:'IF',test:any,body:Token[]}} IfTok */
+/** @typedef {{type:'BREAK'}} BreakTok */
+/** @typedef {{type:'CONTINUE'}} ContinueTok */
+/** @typedef {MoveTok|TurnTok|PenTok|HSVTok|VarTok|RepeatTok|IfTok|BreakTok|ContinueTok} Token */
 
 /** @typedef {{h:number,s:number,v:number}} HSV */
 
@@ -138,6 +141,13 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
           case '-': return a - b;
           case '*': return a * b;
           case '/': return b === 0 ? NaN : a / b;
+          case '%': return b === 0 ? NaN : a % b;
+          case '==': return a === b ? 1 : 0;
+          case '!=': return a !== b ? 1 : 0;
+          case '<': return a < b ? 1 : 0;
+          case '<=': return a <= b ? 1 : 0;
+          case '>': return a > b ? 1 : 0;
+          case '>=': return a >= b ? 1 : 0;
         }
       }
     }
@@ -157,7 +167,8 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
   syncCanvasPen();
 
   function execList(list) {
-    for (const t of list) {
+    for (let idx=0; idx<list.length; idx++) {
+      const t = list[idx];
       switch (t.type) {
         case 'VAR': {
           let val = evalValue(t.value);
@@ -174,9 +185,26 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
           let countVal = evalValue(t.count);
           if (!Number.isFinite(countVal)) throw new Error('Invalid repeat count');
           const times = Math.floor(countVal);
-          for (let k=0;k<times;k++) execList(t.body);
+          for (let k=0;k<times;k++) {
+            const br = execList(t.body);
+            if (br === 'break') break; // break out of repeat
+            if (br === 'continue') continue; // next iteration
+          }
           break;
         }
+        case 'IF': {
+          let testVal = evalValue(t.test);
+          if (Number.isFinite(testVal) && testVal !== 0) {
+            const br = execList(t.body);
+            if (br === 'break') return 'break';
+            if (br === 'continue') return 'continue';
+          }
+          break;
+        }
+        case 'BREAK':
+          return 'break';
+        case 'CONTINUE':
+          return 'continue';
       case 'PEN': {
         penDown = t.state === 'down';
         if (record) ops.push({ op:'pen', down:penDown });
@@ -231,7 +259,8 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
       default:
         throw new Error(`Unknown token type: ${(t).type}`);
       }
-    }
+  }
+  return undefined;
   }
 
   execList(tokens);
@@ -301,6 +330,13 @@ export async function interpretAsync(sourceOrTokens, options = /** @type {Interp
           case '-': return a - b;
           case '*': return a * b;
           case '/': return b === 0 ? NaN : a / b;
+          case '%': return b === 0 ? NaN : a % b;
+          case '==': return a === b ? 1 : 0;
+          case '!=': return a !== b ? 1 : 0;
+          case '<': return a < b ? 1 : 0;
+          case '<=': return a <= b ? 1 : 0;
+          case '>': return a > b ? 1 : 0;
+          case '>=': return a >= b ? 1 : 0;
         }
       }
     }
@@ -333,14 +369,32 @@ export async function interpretAsync(sourceOrTokens, options = /** @type {Interp
         let countVal = evalValue(t.count);
         if (!Number.isFinite(countVal)) throw new Error('Invalid repeat count');
         const times = Math.floor(countVal);
-        for (let k=0;k<times;k++) {
+        outer: for (let k=0;k<times;k++) {
           for (const inner of t.body) {
-            await execToken(inner);
+            const signal = await execToken(inner);
+            if (signal === 'break') break outer;
+            if (signal === 'continue') continue outer;
             if (delayMs > 0) await new Promise(r=>setTimeout(r, delayMs));
           }
         }
         return; // already delayed inside
       }
+      case 'IF': {
+        let testVal = evalValue(t.test);
+        if (Number.isFinite(testVal) && testVal !== 0) {
+          for (const inner of t.body) {
+            const signal = await execToken(inner);
+            if (signal === 'break') return; // propagate to enclosing repeat
+            if (signal === 'continue') return; // propagate continue (treated by caller)
+            if (delayMs > 0) await new Promise(r=>setTimeout(r, delayMs));
+          }
+        }
+        return; // delay applied inside body
+      }
+      case 'BREAK':
+        return 'break';
+      case 'CONTINUE':
+        return 'continue';
       case 'PEN': {
         penDown = t.state === 'down';
         if (record) ops.push({ op:'pen', down:penDown });
@@ -445,7 +499,7 @@ export function createStepper(sourceOrTokens, options = /** @type {InterpretOpti
 
   // Execution cursors
   let mainIndex = 0;
-  /** @type {{ body: Token[]; index: number; remaining: number }[]} */
+  /** @type {{ body: Token[]; index: number; remaining: number; kind:'repeat'|'if' }}[] */
   const frames = [];
   let finished = false;
 
@@ -465,7 +519,7 @@ export function createStepper(sourceOrTokens, options = /** @type {InterpretOpti
         const v = evalExpr(ast.value); return ast.op === '-' ? -v : +v; }
       case 'bin': {
         const a = evalExpr(ast.left); const b = evalExpr(ast.right);
-        switch (ast.op) { case '+': return a + b; case '-': return a - b; case '*': return a * b; case '/': return b === 0 ? NaN : a / b; }
+  switch (ast.op) { case '+': return a + b; case '-': return a - b; case '*': return a * b; case '/': return b === 0 ? NaN : a / b; case '%': return b === 0 ? NaN : a % b; case '==': return a === b ? 1:0; case '!=': return a !== b ? 1:0; case '<': return a < b ? 1:0; case '<=': return a <= b ? 1:0; case '>': return a > b ? 1:0; case '>=': return a >= b ? 1:0; }
       }
     }
     return NaN;
@@ -512,8 +566,48 @@ export function createStepper(sourceOrTokens, options = /** @type {InterpretOpti
         let countVal = evalValue(tok.count);
         if (!Number.isFinite(countVal)) throw new Error('Invalid repeat count');
         const times = Math.floor(countVal);
-        if (times > 0) frames.push({ body: tok.body, index: 0, remaining: times });
+        if (times > 0) frames.push({ body: tok.body, index: 0, remaining: times, kind:'repeat' });
         break; // repeat itself counts as a step
+      }
+      case 'IF': {
+        let testVal = evalValue(tok.test);
+        if (Number.isFinite(testVal) && testVal !== 0) frames.push({ body: tok.body, index: 0, remaining: 1, kind:'if' });
+        break;
+      }
+      case 'BREAK': {
+        // Find nearest repeat frame; discard inner frames first
+        for (let i=frames.length-1;i>=0;i--) {
+          const fr = frames[i];
+          if (fr.kind === 'repeat') {
+            // Mark to end this iteration and loop count
+            fr.index = fr.body.length; fr.remaining = 1; // after decrement => 0
+            // Remove any frames above repeat (already iterating inside ifs)
+            frames.length = i+1; // truncate to this repeat frame only
+            break;
+          }
+        }
+        break;
+      }
+      case 'CONTINUE': {
+        // Fast-forward nearest repeat frame's current iteration
+        for (let i=frames.length-1;i>=0;i--) {
+          const fr = frames[i];
+          if (fr.kind === 'repeat') {
+            fr.index = fr.body.length; // finish this iteration, remaining unchanged
+            frames.length = i+1; // drop nested frames inside
+            break;
+          }
+        }
+        break;
+      }
+      case 'CONTINUE': {
+        // Fast-forward current body frame to end so repeat resumes next iteration
+        for (let i=frames.length-1;i>=0;i--) {
+          const fr = frames[i];
+          fr.index = fr.body.length; // complete this iteration
+          break;
+        }
+        break;
       }
       case 'PEN': {
         penDown = tok.state === 'down';
