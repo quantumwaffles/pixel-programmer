@@ -5,6 +5,7 @@
     import { interpret } from "$lib/turtle-lang/interpreter.js";
     import CodeMirrorEditor from 'svelte-codemirror-editor';
     import { EditorView, keymap } from '@codemirror/view';
+    import { Prec } from '@codemirror/state';
     import { indentWithTab } from '@codemirror/commands';
 
     const STORAGE_KEY = 'pixel-programmer:turtleScript';
@@ -162,7 +163,11 @@ f 6
                             class="font-mono text-sm leading-snug h-full"
                             bind:value={code}
                             extensions={[
-                                keymap.of([indentWithTab]),
+                                Prec.highest(keymap.of([
+                                    indentWithTab,
+                                    { key: 'Mod-Enter', run: () => { handleRun(); return true; } },
+                                    { key: 'Ctrl-Enter', run: () => { handleRun(); return true; } }
+                                ])),
                                 EditorView.theme({
                                     '&': { background: 'transparent' },
                                     '.cm-content': { padding: '8px' },
@@ -170,7 +175,6 @@ f 6
                                 }, { dark: true })
                             ]}
                             placeholder={'forward 50\nback 10\nleft 90\nright 45\npen down\nhsv +10 _ 50'}
-                            on:keydown={(e)=>{ if((e.ctrlKey||e.metaKey)&& e.key==='Enter'){ e.preventDefault(); handleRun(); } }}
                         />
                     </div>
                     <div class="pt-3 flex flex-col gap-2">
