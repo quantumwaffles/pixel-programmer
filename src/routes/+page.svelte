@@ -12,53 +12,46 @@
 
     const STORAGE_KEY = 'pixel-programmer:turtleScript';
 
-    // Editor code content (may be overridden by localStorage on client)
-    let code = $state(`// Turtle demo script exercising all features including indentation-based repeat blocks
-    // Abbreviations (f,r,l,b) hsv absolute/offset/ignore and nested repeat blocks
+        // Editor code content (may be overridden by localStorage on client)
+        let code = $state(`// Mandelbrot demo
+var w = 80
+var h = 60
+var maxIter = 50
 
-    pen down
-    hsv 30 90 90
+pen down
 
-    // Draw a square using repeat (size 15)
-    repeat 4:
-        f 15
-        r 90
-        f 15
-        r 90
-        f 15
-        r 90
-        f 15
-        r 90
-
-    // Star-like pattern (rotate & change hue)
-    repeat 6:
-        hsv +60 _ _    // shift hue
-        f 10
-        l 60
-
-    // Move without drawing
+var y = 0
+repeat until y >= h:
+    var x = 0
+    repeat until x >= w:
+        // Map (x,y) to complex plane (range roughly -2.5..1, -1..1)
+        var cr = (x / w) * 3.5 - 2.5
+        var ci = (y / h) * 2.0 - 1.0
+        var zr = 0
+        var zi = 0
+        var iter = 0
+        repeat until (zr*zr + zi*zi) > 4:
+            // z = z^2 + c
+            var tmp = zr*zr - zi*zi + cr
+            var zi = 2 * zr * zi + ci
+            var zr = tmp
+            iter = iter + 1
+            if iter >= maxIter:
+                break
+        // Color by iteration (simple palette)
+        var hue = iter * 6
+        hsv hue 90 90
+        forward 0      // plot single pixel
+        x = x + 1
+        forward 1      // move to next pixel cell without drawing (pen toggled below)
+    // Move to next row
     pen up
-    f 5
+    back w+1
+    right 90
+    forward 1       // down one row (y+)
+    left 90
     pen down
-
-    // Nested repeats: a tiny grid stamp 3x repeated 3 times with hue shift
-    repeat 3:
-        hsv +40 -10 +0
-        repeat 3:
-            f 4
-            r 90
-            f 4
-            r 90
-            f 4
-            r 90
-            f 4
-            r 90 // tiny square
-            r 120 // reorient
-
-    // Final color tweak: lower value only
-    hsv _ _ -30
-    f 6
-    // End of demo`);
+    y = y + 1`);
 
     // Lexer output
     let tokens = $state([]);
