@@ -10,7 +10,7 @@ export default function sketch(p) {
     let pen = p.createVector(0, 0);
     let pixelSize = 5;
     let gridLineThickness = 1;
-    let showGrid = false;
+    let showGrid = true;
     // Colors
     let bgColor = p.color(24, 24, 28); // dark background
     let gridColor = p.color(60);       // subtle mid-gray grid
@@ -20,7 +20,8 @@ export default function sketch(p) {
     let heading = 0;
 
     p.setup = function () {
-    p.createCanvas(400, 400);
+    // Increased default canvas size for a larger drawing area
+    p.createCanvas(800, 800);
     p.background(bgColor);
     // Center pen in the grid after canvas created
     pen.x = Math.floor(p.width / (2 * pixelSize));

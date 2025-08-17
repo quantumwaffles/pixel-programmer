@@ -141,15 +141,14 @@ f 6
     });
 </script>
 
-<section class="min-h-screen flex flex-col items-center gap-10 py-10 px-4 bg-gradient-to-br from-base-200 via-base-100 to-base-200">
-    <div class="text-center space-y-2 max-w-2xl">
-        <h1 class="text-5xl font-extrabold tracking-wide text-primary drop-shadow-md">Pixel Programmer</h1>
-    </div>
-
-    <div class="w-full flex flex-col md:flex-row gap-8 items-stretch justify-center max-w-6xl">
-        <!-- Code + Console Panel -->
-        <div class="md:w-[420px] w-full">
-            <div class="card bg-base-100 shadow-lg border border-base-300 h-full flex flex-col">
+<section class="h-screen w-screen flex overflow-hidden bg-gradient-to-br from-base-200 via-base-100 to-base-200">
+    <!-- Left: Code + Console (1/3) -->
+    <div class="w-1/3 min-w-[340px] h-full flex flex-col border-r border-base-300 bg-base-100/70 backdrop-blur-sm">
+        <div class="p-4 pb-3 border-b border-base-300">
+            <h1 class="text-2xl font-bold tracking-wide text-primary">Pixel Programmer</h1>
+        </div>
+        <div class="flex-1 overflow-auto">
+            <div class="h-full flex flex-col">
                 <div class="p-4 sm:p-6 pb-2 flex flex-col gap-1">
                     <h2 class="card-title text-primary/80 tracking-wide">Turtle Script</h2>
                     <div class="text-[10px] uppercase tracking-wide text-base-content/50">Editor</div>
@@ -183,7 +182,7 @@ f 6
                     {/if}
                 </div>
                 <!-- Console Panel -->
-                <div class="mt-4 border-t border-base-300 bg-base-200/40">
+                <div class="mt-4 border-t border-base-300 bg-base-200/40 flex-shrink-0">
                     <div class="px-4 pt-3 pb-2 flex items-center gap-2 text-xs text-base-content/60">
                         <span class="font-semibold">Console</span>
                         <span class="opacity-60">Tokens</span>
@@ -207,22 +206,16 @@ f 6
                 </div>
             </div>
         </div>
-
-        <!-- Preview Panel -->
-        <div class="md:w-[460px] w-full">
-            <div class="card bg-base-100 shadow-xl border border-base-300 h-full">
-                <div class="card-body p-4 sm:p-6 gap-4">
-                    <h2 class="card-title justify-center text-primary/80 tracking-wide">Preview Window</h2>
-                    <div class="mockup-window border bg-base-300">
-                        <div class="flex justify-center items-center bg-base-200 p-4">
-                            <P5Canvas {sketch} onInstance={(inst)=> canvasInst = inst} />
-                        </div>
-                    </div>
-                    <div class="text-xs text-base-content/50 text-center">
-                        Powered by <span class="font-semibold text-secondary">p5.js</span>
-                    </div>
-                </div>
+    </div>
+    <!-- Right: Canvas (2/3) -->
+    <div class="flex-1 h-full flex flex-col">
+        <div class="flex-1 flex items-center justify-center p-6">
+            <div class="w-full h-full flex items-center justify-center">
+                <P5Canvas {sketch} onInstance={(inst)=> canvasInst = inst} />
             </div>
+        </div>
+        <div class="text-xs text-base-content/50 text-center pb-2">
+            Powered by <span class="font-semibold text-secondary">p5.js</span>
         </div>
     </div>
 </section>

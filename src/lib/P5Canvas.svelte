@@ -2,7 +2,8 @@
   import p5 from 'p5';
 
   // Props via runes ($props) for Svelte 5
-  let { sketch, width = 400, height = 400, onInstance = null } = $props();
+  // Increase default canvas size
+  let { sketch, width = 800, height = 800, onInstance = null } = $props();
 
   /** @type {HTMLElement | null} */
   let canvasParent;
