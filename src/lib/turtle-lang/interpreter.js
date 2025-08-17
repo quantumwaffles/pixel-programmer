@@ -120,8 +120,9 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
         break;
       }
       case 'TURN': {
-        const delta = t.direction === 'left' ? t.value : -t.value;
-        dir = wrapHue(dir + delta); // reuse wrap for 0..360
+  // Adjust: left should rotate counter-clockwise (decrease heading), right clockwise (increase)
+  const delta = t.direction === 'left' ? -t.value : t.value;
+  dir = wrapHue(dir + delta);
         if (record) ops.push({ op:'turn', heading:dir });
         break;
       }

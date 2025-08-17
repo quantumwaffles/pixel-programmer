@@ -31,6 +31,8 @@
     let canvasInst = $state(null);
     let runError = $state(null);
     let lastRunStats = $state(null);
+    let autoRun = $state(false);
+    let _runTimer = null;
 
     function handleRun() {
         runError = null; lastRunStats = null;
@@ -58,6 +60,19 @@
             runError = e.message || String(e);
         }
     }
+
+    // Auto-run effect (debounced)
+    $effect(() => {
+        if (!autoRun) return; // disabled
+        if (lexError) return; // don't run with syntax errors
+        if (!canvasInst) return; // wait for canvas
+        // Debounce
+        if (_runTimer) clearTimeout(_runTimer);
+        _runTimer = setTimeout(() => {
+            handleRun();
+        }, 300);
+        return () => { if (_runTimer) clearTimeout(_runTimer); };
+    });
 </script>
 
 <section class="min-h-screen flex flex-col items-center gap-10 py-10 px-4 bg-gradient-to-br from-base-200 via-base-100 to-base-200">
@@ -88,10 +103,14 @@
                             <textarea bind:value={code} class="textarea textarea-bordered font-mono text-sm leading-snug min-h-[400px] resize-y" placeholder="forward 50\nback 10\nleft 90\nright 45\npen down\nhsv +10 _ 50"></textarea>
                         </label>
                         <div class="mt-3 flex flex-col gap-2">
-                            <div class="flex gap-2">
+                            <div class="flex flex-wrap gap-2 items-center">
                                 <button class="btn btn-primary btn-sm" onclick={handleRun}>Run</button>
                                 <button class="btn btn-outline btn-sm" onclick={() => { canvasInst?.clearPixels?.(); lastRunStats=null; runError=null; }}>Clear</button>
                                 <button class="btn btn-ghost btn-sm" onclick={() => setTab('tokens')}>View Tokens</button>
+                                <label class="label cursor-pointer gap-1 ml-auto text-xs">
+                                    <span class="text-base-content/60">Auto</span>
+                                    <input type="checkbox" class="toggle toggle-xs" checked={autoRun} onchange={(e)=> autoRun = e.currentTarget.checked} />
+                                </label>
                             </div>
                             {#if runError}
                                 <div class="alert alert-error py-1 min-h-0 h-auto text-xs">{runError}</div>
