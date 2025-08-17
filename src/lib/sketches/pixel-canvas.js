@@ -67,13 +67,9 @@ export default function sketch(p) {
         const x0 = pen.x * pixelSize;
         const y0 = pen.y * pixelSize;
         p.push();
-        if (penDown) {
-            p.fill(255, 255, 0); // yellow fill when pen down
-            p.stroke(200, 180, 0);
-        } else {
-            p.noFill();
-            p.stroke(255, 255, 0); // yellow outline when pen up
-        }
+    p.noFill();
+    // Always outline only (no fill) regardless of pen state
+    p.stroke(255, 255, 0);
         p.strokeWeight(Math.max(1, gridLineThickness));
         p.rect(x0, y0, pixelSize, pixelSize);
         p.pop();

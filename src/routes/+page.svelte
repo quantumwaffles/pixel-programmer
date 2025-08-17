@@ -5,7 +5,38 @@
     import { interpret } from "$lib/turtle-lang/interpreter.js";
 
     // Editor code content
-    let code = $state(`// Turtle code will go here soon.\n// Try commands: forward 50\npen down\nleft 90\nhsv +10 _ 50`);
+    let code = $state(`// Turtle demo script exercising all features
+// Abbreviations (f,r,l,b) and full words; hsv absolute / offsets / ignores
+// Draw a square
+pen down
+hsv 30 90 90
+forward 15
+right 90
+f 15
+r 90
+f 15
+r 90
+f 15  // completes square
+
+// Change hue only (offset), keep s & v
+hsv +120 _ _
+l 45
+f 10
+
+// Adjust hue again, decrease saturation, bump value
+hsv +120 -30 +5
+left 90
+back 5
+
+// Lift pen, move without drawing
+pen up
+f 5
+
+// Lower pen and draw a short leg with dimmer value (ignore h & s)
+pen down
+hsv _ _ 40
+f 8
+// End of demo`);
 
     // Lexer output
     let tokens = $state([]);
@@ -87,7 +118,12 @@
                 </div>
                 <div class="px-4 pb-0">
                     <label class="form-control w-full">
-                        <textarea bind:value={code} class="textarea textarea-bordered font-mono text-sm leading-snug min-h-[300px] resize-y" placeholder="forward 50\nback 10\nleft 90\nright 45\npen down\nhsv +10 _ 50"></textarea>
+                        <textarea
+                            bind:value={code}
+                            class="textarea textarea-bordered font-mono text-sm leading-snug min-h-[300px] resize-y"
+                            placeholder="forward 50\nback 10\nleft 90\nright 45\npen down\nhsv +10 _ 50"
+                            onkeydown={(e)=>{ if((e.ctrlKey||e.metaKey)&& e.key==='Enter'){ e.preventDefault(); handleRun(); } }}
+                        ></textarea>
                     </label>
                 </div>
                 <div class="px-4 pt-3 flex flex-col gap-2">
@@ -102,8 +138,9 @@
                     {#if runError}
                         <div class="alert alert-error py-1 min-h-0 h-auto text-xs">{runError}</div>
                     {:else if lastRunStats}
-                        <div class="text-xs text-base-content/60">
-                            <span class="font-semibold">Done.</span> Ops: {lastRunStats.operations}, Pos: ({lastRunStats.finalX},{lastRunStats.finalY}), Heading: {lastRunStats.heading.toFixed(1)}°, HSV: {Math.round(lastRunStats.color.h)}/{Math.round(lastRunStats.color.s)}/{Math.round(lastRunStats.color.v)}
+                        <div class="text-xs text-base-content/60 space-y-1">
+                            <div><span class="font-semibold">Done.</span> Ops: {lastRunStats.operations}, Pos: ({lastRunStats.finalX},{lastRunStats.finalY}), Heading: {lastRunStats.heading.toFixed(1)}°, HSV: {Math.round(lastRunStats.color.h)}/{Math.round(lastRunStats.color.s)}/{Math.round(lastRunStats.color.v)}</div>
+                            <div class="opacity-60">(Ctrl+Enter to Run)</div>
                         </div>
                     {/if}
                 </div>
