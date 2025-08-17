@@ -8,14 +8,16 @@ export default function sketch(p) {
     // Pen holds grid cell coordinates (not pixel units)
     /** @type {p5.Vector} */
     let pen = p.createVector(0, 0);
-    let pixelSize = 10;
-    let gridLineThickness = 2;
-    let showGrid = true;
+    let pixelSize = 5;
+    let gridLineThickness = 1;
+    let showGrid = false;
     // Colors
     let bgColor = p.color(24, 24, 28); // dark background
     let gridColor = p.color(60);       // subtle mid-gray grid
     // Painted pixels: Map key "x,y" -> {h,s,v}
     const painted = new Map();
+    // Heading in degrees (0 points to +X / east) used for directional indicator
+    let heading = 0;
 
     p.setup = function () {
     p.createCanvas(400, 400);
@@ -72,6 +74,26 @@ export default function sketch(p) {
     p.stroke(255, 255, 0);
         p.strokeWeight(Math.max(1, gridLineThickness));
         p.rect(x0, y0, pixelSize, pixelSize);
+    // Direction indicator (arrow outside the square)
+    const cx = x0 + pixelSize / 2;
+    const cy = y0 + pixelSize / 2;
+    const rad = heading * Math.PI / 180;
+    const offset = pixelSize * Math.SQRT2 / 2; // full diagonal (hypotenuse) of the square
+    const gap = Math.max(2, pixelSize * 0.1); // small gap beyond square edge
+    const shaftLen = pixelSize * 0.45; // length of arrow shaft outside
+    // Base point sits just outside the square edge in heading direction
+    const bx = cx + Math.cos(rad) * (offset + gap * 0.2);
+    const by = cy + Math.sin(rad) * (offset + gap * 0.2);
+    const tx = cx + Math.cos(rad) * (offset + gap + shaftLen);
+    const ty = cy + Math.sin(rad) * (offset + gap + shaftLen);
+    p.stroke(255, 220, 80);
+    p.line(bx, by, tx, ty);
+    // Arrowhead
+    const ah = shaftLen * 0.35;
+    const leftRad = rad + Math.PI * 0.75;
+    const rightRad = rad - Math.PI * 0.75;
+    p.line(tx, ty, tx + Math.cos(leftRad) * ah, ty + Math.sin(leftRad) * ah);
+    p.line(tx, ty, tx + Math.cos(rightRad) * ah, ty + Math.sin(rightRad) * ah);
         p.pop();
     };
 
@@ -119,4 +141,8 @@ export default function sketch(p) {
     p.clearPixels = function () { painted.clear(); };
     /** Get current pixel size */
     p.getPixelSize = function () { return pixelSize; };
+    /** Set current heading (degrees) */
+    p.setHeading = function (deg) { if (Number.isFinite(deg)) heading = ((deg % 360) + 360) % 360; };
+    /** Get heading */
+    p.getHeading = function () { return heading; };
 }

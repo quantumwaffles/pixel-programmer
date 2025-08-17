@@ -107,6 +107,7 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
     if (!canvas) return;
     canvas.penSet && canvas.penSet(Math.round(x), Math.round(y));
     if (penDown) canvas.penDown && canvas.penDown(); else canvas.penUp && canvas.penUp();
+  canvas.setHeading && canvas.setHeading(dir);
   }
 
   syncCanvasPen();
@@ -130,6 +131,7 @@ export function interpret(sourceOrTokens, options = /** @type {InterpretOptions}
   const delta = t.direction === 'left' ? -t.value : t.value;
   dir = wrapHue(dir + delta);
         if (record) ops.push({ op:'turn', heading:dir });
+      if (canvas && canvas.setHeading) canvas.setHeading(dir);
         break;
       }
       case 'HSV': {
