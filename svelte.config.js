@@ -1,12 +1,19 @@
-import adapter from '@sveltejs/adapter-auto';
+import adapter from '@sveltejs/adapter-static';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	kit: {
-		// adapter-auto only supports some environments, see https://svelte.dev/docs/kit/adapter-auto for a list.
-		// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
-		// See https://svelte.dev/docs/kit/adapters for more information about adapters.
-		adapter: adapter()
+		adapter: adapter({
+			// Create a fallback page so GitHub Pages 404s route back to SPA
+			fallback: '404.html'
+		}),
+		paths: {
+			// Set GH_PAGES_BASE in CI to '/repo-name' for project Pages; keep '' locally
+			base: process.env.GH_PAGES_BASE || ''
+		},
+		prerender: {
+			entries: ['*']
+		}
 	},
 	vitePlugin: {
 		inspector: {

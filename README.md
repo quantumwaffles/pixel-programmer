@@ -25,14 +25,46 @@ npm run dev
 npm run dev -- --open
 ```
 
-## Building
+## Building (Static Site)
 
-To create a production version of your app:
+This project is configured with `@sveltejs/adapter-static` so it exports a static site suitable for GitHub Pages.
+
+Build output goes to `build/` (default from adapter-static):
 
 ```sh
 npm run build
 ```
 
-You can preview the production build with `npm run preview`.
+Preview locally:
+```sh
+npm run preview
+```
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+### Deploying to GitHub Pages
+
+A GitHub Actions workflow (`.github/workflows/deploy.yml`) is included. On pushes to `main` (or `master`) it will:
+1. Install dependencies
+2. Build with `GH_PAGES_BASE` set to `/<repo-name>` (so asset paths work on project Pages)
+3. Publish the `build/` folder to Pages
+
+If your repository is named `pixel-programmer`, after enabling Pages (Settings → Pages → Build and deployment → GitHub Actions) the site will appear at:
+```
+https://<your-username>.github.io/pixel-programmer/
+```
+
+If you serve from a custom domain remove/adjust `GH_PAGES_BASE` env and optionally set a `CNAME` file.
+
+### Local Base Path Testing
+
+To emulate the GitHub Pages base path locally:
+```sh
+set GH_PAGES_BASE=/pixel-programmer
+npm run build
+npm run preview
+```
+On PowerShell use:
+```powershell
+$env:GH_PAGES_BASE='/pixel-programmer'; npm run build; npm run preview
+```
+
+Then visit `http://localhost:4173/pixel-programmer/`.
