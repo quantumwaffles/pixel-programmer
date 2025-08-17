@@ -8,6 +8,7 @@
     import { Prec } from '@codemirror/state';
     import { indentWithTab } from '@codemirror/commands';
     import { turtleExtension } from '$lib/turtle-lang/cm-language.js';
+    import ReferencePopup from '$lib/ReferencePopup.svelte';
 
     const STORAGE_KEY = 'pixel-programmer:turtleScript';
 
@@ -299,8 +300,11 @@
 <section class="h-screen w-screen flex overflow-hidden bg-gradient-to-br from-base-200 via-base-100 to-base-200">
     <!-- Left: Code + Console (1/3) -->
     <div class="w-1/3 min-w-[340px] h-full flex flex-col border-r border-base-300 bg-base-100/70 backdrop-blur-sm">
-        <div class="p-4 pb-3 border-b border-base-300">
+        <div class="p-4 pb-3 border-b border-base-300 flex items-center gap-3">
             <h1 class="text-2xl font-bold tracking-wide text-primary">Pixel Programmer</h1>
+            <div class="ml-auto flex items-center gap-2">
+                <ReferencePopup />
+            </div>
         </div>
         <div class="flex-1 flex flex-col overflow-hidden">
             <div class="flex-1 flex flex-col min-h-0">
@@ -375,9 +379,6 @@
                             </div>
                         {/if}
                     {/if}
-                    <div class="mt-2 text-[10px] text-base-content/50 space-y-1">
-                        <p>Supported: forward/back/left/right (abbr), pen up|down, hsv, repeat.</p>
-                    </div>
                 </div>
             </div>
         </div>
