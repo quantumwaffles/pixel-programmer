@@ -3,13 +3,100 @@
  * @param {import('p5')} p
  */
 export default function sketch(p) {
-  p.setup = function () {
-    p.createCanvas(400, 400);
-    p.background(220);
-  };
 
-  p.draw = function () {
-    p.fill(100, 200, 255);
-    p.ellipse(p.width / 2, p.height / 2, 100, 100);
-  };
+    let penDown = false;
+    // Pen holds grid cell coordinates (not pixel units)
+    /** @type {p5.Vector} */
+    let pen = p.createVector(0, 0);
+    let pixelSize = 10;
+    let gridLineThickness = 2;
+    let showGrid = true;
+    // Colors
+    let bgColor = p.color(24, 24, 28); // dark background
+    let gridColor = p.color(60);       // subtle mid-gray grid
+
+    p.setup = function () {
+    p.createCanvas(400, 400);
+    p.background(bgColor);
+    // Center pen in the grid after canvas created
+    pen.x = Math.floor(p.width / (2 * pixelSize));
+    pen.y = Math.floor(p.height / (2 * pixelSize));
+    };
+
+    p.draw = function () {
+        // Clear background each frame
+    p.background(bgColor);
+
+        if (showGrid) {
+            p.push();
+            p.stroke(gridColor);
+            p.strokeWeight(gridLineThickness);
+            p.noFill();
+
+            // Vertical lines
+            for (let x = 0; x <= p.width; x += pixelSize) {
+                p.line(x, 0, x, p.height);
+            }
+            // Horizontal lines
+            for (let y = 0; y <= p.height; y += pixelSize) {
+                p.line(0, y, p.width, y);
+            }
+            p.pop();
+        }
+
+        // Determine current pen (mouse) cell
+    // No mouse interaction: pen position & state managed exclusively via exposed API below.
+
+        // Draw pen highlight based on pen vector
+        const x0 = pen.x * pixelSize;
+        const y0 = pen.y * pixelSize;
+        p.push();
+        if (penDown) {
+            p.fill(255, 255, 0); // yellow fill when pen down
+            p.stroke(200, 180, 0);
+        } else {
+            p.noFill();
+            p.stroke(255, 255, 0); // yellow outline when pen up
+        }
+        p.strokeWeight(Math.max(1, gridLineThickness));
+        p.rect(x0, y0, pixelSize, pixelSize);
+        p.pop();
+    };
+
+    // ---------- Pen Control API (accessible via p5 instance) ----------
+    /** Clamp pen to grid bounds */
+    function clampPen() {
+        const maxX = Math.floor(p.width / pixelSize) - 1;
+        const maxY = Math.floor(p.height / pixelSize) - 1;
+        pen.x = Math.min(Math.max(0, pen.x), maxX);
+        pen.y = Math.min(Math.max(0, pen.y), maxY);
+    }
+
+    /** Set pen to absolute grid cell */
+    p.penSet = function (x, y) { pen.x = Math.floor(x); pen.y = Math.floor(y); clampPen(); };
+    /** Move pen by delta cells */
+    p.penMove = function (dx, dy) { pen.x += dx; pen.y += dy; clampPen(); };
+    /** Raise pen (no fill) */
+    p.penUp = function () { penDown = false; };
+    /** Lower pen (fill) */
+    p.penDown = function () { penDown = true; };
+    /** Toggle pen state */
+    p.penToggle = function () { penDown = !penDown; };
+    /** Get current pen state */
+    p.penGet = function () { return { x: pen.x, y: pen.y, down: penDown }; };
+    /** Change pixel (cell) size; keeps pen centered proportionally */
+    p.setPixelSize = function (size) {
+        size = Math.max(1, Math.floor(size));
+        if (size === pixelSize) return;
+        const centerPx = pen.x * pixelSize + pixelSize / 2;
+        const centerPy = pen.y * pixelSize + pixelSize / 2;
+        pixelSize = size;
+        pen.x = Math.floor(centerPx / pixelSize);
+        pen.y = Math.floor(centerPy / pixelSize);
+        clampPen();
+    };
+    /** Show / hide grid */
+    p.setShowGrid = function (v) { showGrid = !!v; };
+    /** Adjust grid color */
+    p.setGridColor = function (r, g, b, a) { gridColor = p.color(r, g, b, a); };
 }
