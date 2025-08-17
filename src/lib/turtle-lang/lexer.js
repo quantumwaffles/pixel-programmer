@@ -1,10 +1,10 @@
 /**
  * Turtle language lexer
  * Supported commands (case-insensitive):
- *   forward n        - move forward n pixels
- *   back n           - move backward n pixels
- *   left n           - rotate left n units
- *   right n          - rotate right n units
+ *   forward n        - move forward n pixels (may be abbreviated to any leading substring e.g. f, fo, for ...)
+ *   back n           - move backward n pixels (b, ba, bac, back)
+ *   left n           - rotate left n units (l, le, lef, left)
+ *   right n          - rotate right n units (r, ri, rig, righ, right)
  *   pen up|down      - raise or lower the pen
  *   hsv h s v        - set HSV color; each param: offset (+n|-n), absolute (n), or '_' ignore
  *
@@ -65,6 +65,17 @@ function preprocessLines(source) {
 		});
 }
 
+function resolveAbbrev(word) {
+	const cmds = ['forward','back','left','right'];
+	if (!word) return word;
+	const matches = cmds.filter(c => c.startsWith(word));
+	if (matches.length === 1) return matches[0];
+	// If exact match among multiples, prefer it
+	if (matches.includes(word)) return word;
+	if (matches.length === 0) return word; // unchanged; handled later as unknown
+	throw new Error(`Ambiguous command abbreviation '${word}'`);
+}
+
 /** Main parse function (formerly lex) */
 export function parse(source) {
 	if (typeof source !== 'string') throw new TypeError('parse() requires a string');
@@ -75,7 +86,8 @@ export function parse(source) {
 	lines.forEach((line, lineIndex) => {
 		if (!line) return; // skip empty
 		const parts = line.split(/\s+/);
-		const head = ident(parts[0]);
+		let head = ident(parts[0]);
+		head = resolveAbbrev(head);
 
 		const emit = (tok) => tokens.push(tok);
 
