@@ -46,7 +46,7 @@ repeat until y >= h:
         forward 1      // move to next pixel cell without drawing (pen toggled below)
     // Move to next row
     pen up
-    back w+1
+    back w
     right 90
     forward 1       // down one row (y+)
     left 90
