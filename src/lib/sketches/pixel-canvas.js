@@ -8,7 +8,7 @@ export default function sketch(p) {
     // Pen holds grid cell coordinates (not pixel units)
     /** @type {p5.Vector} */
     let pen = p.createVector(0, 0);
-    let pixelSize = 5;
+    let pixelSize = 10;
     let gridLineThickness = 1;
     let showGrid = true;
     // Colors

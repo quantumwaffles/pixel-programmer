@@ -8,6 +8,11 @@
  *   pen up|down      - raise or lower the pen
  *   hsv h s v        - set HSV color; each param: offset (+n|-n), absolute (n), or '_' ignore
  *   repeat N { ... } - repeat enclosed block N times (blocks can nest)
+ *   var name = value - declare/assign numeric variable (value can be number / variable / arithmetic expression)
+ *   name = value      - re-assign existing variable
+ *   Simple arithmetic expressions allowed anywhere a single numeric argument is expected:
+ *      +  -  *  /  parentheses and unary +/- (e.g. forward size*2, repeat (n+4)/2 { ... })
+ *   Variables (identifiers) can be used where a single numeric argument is expected: forward x, left angle, repeat count, etc.
  *
  * Returns an array of instruction tokens rather than low-level lexical tokens to keep things practical.
  * Each token has a type field plus other fields:
@@ -20,7 +25,7 @@
  * Throws an Error on invalid syntax with line / column information.
  */
 
-/** @typedef {{mode:'offset'|'absolute'|'ignore', value:number|null}} HSVParam */
+/** @typedef {{mode:'offset'|'absolute'|'ignore', value:number|null|{ref:string}}} HSVParam */
 
 /** Create an error with line/column context */
 function syntaxError(message, line, col) {
@@ -35,13 +40,22 @@ function parseHSVParam(raw) {
 	if (raw === '_' || raw === null || raw === undefined) {
 		return { mode: 'ignore', value: null };
 	}
+	// Offset form +n / -n or +var / -var
 	if (/^[+-]/.test(raw)) {
-		// Offset form +n / -n (n can be float)
+		const sign = raw[0];
+		const body = raw.slice(1);
+		if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(body)) {
+			return { mode: 'offset', value: { ref: ident(body), sign } };
+		}
 		const num = Number(raw);
 		if (!Number.isFinite(num)) throw new Error(`Invalid HSV offset: ${raw}`);
 		return { mode: 'offset', value: num };
 	}
-	// Absolute value
+	// Identifier absolute
+	if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(raw)) {
+		return { mode: 'absolute', value: { ref: ident(raw) } };
+	}
+	// Absolute numeric value
 	const num = Number(raw);
 	if (!Number.isFinite(num)) throw new Error(`Invalid HSV absolute value: ${raw}`);
 	return { mode: 'absolute', value: num };
@@ -77,6 +91,78 @@ function resolveAbbrev(word) {
 	throw new Error(`Ambiguous command abbreviation '${word}'`);
 }
 
+// Parse a token that should be either a number or identifier reference
+function parseNumberOrRef(raw, line, col) {
+	const num = Number(raw);
+	if (raw !== '' && Number.isFinite(num)) return num;
+	if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(raw)) return { ref: ident(raw) };
+	throw syntaxError(`Expected number or identifier, got '${raw}'`, line, col);
+}
+
+// Expression tokenizer and parser (simple recursive descent)
+function tokenizeExpr(str) {
+	const tokens = []; let i=0;
+	while (i < str.length) {
+		const ch = str[i];
+		if (/\s/.test(ch)) { i++; continue; }
+		if (/[()+\-*\/]/.test(ch)) { tokens.push({ type: 'op', value: ch }); i++; continue; }
+		if (/[0-9.]/.test(ch)) {
+			let start=i; while (i<str.length && /[0-9._]/.test(str[i])) i++; // allow underscores ignored
+			const raw = str.slice(start,i).replace(/_/g,'');
+			if (raw === '' || raw === '.') throw new Error('Invalid number literal');
+			tokens.push({ type:'num', value: raw });
+			continue;
+		}
+		if (/[a-zA-Z_]/.test(ch)) {
+			let start=i; while (i<str.length && /[a-zA-Z0-9_]/.test(str[i])) i++;
+			tokens.push({ type:'id', value: ident(str.slice(start,i)) });
+			continue;
+		}
+		throw new Error(`Unexpected character '${ch}' in expression`);
+	}
+	return tokens;
+}
+
+function parseExpressionString(str, line, col) {
+	str = str.trim();
+	if (!str) throw syntaxError('Empty expression', line, col);
+	// Fast path: single token number or identifier
+	if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(str)) return { ref: ident(str) };
+	const numFast = Number(str); if (Number.isFinite(numFast)) return numFast;
+	let tokens;
+	try { tokens = tokenizeExpr(str); } catch (e) { throw syntaxError(e.message, line, col); }
+	let pos=0;
+	function peek(){ return tokens[pos]; }
+	function consume(){ return tokens[pos++]; }
+	function parsePrimary(){
+		const t = peek(); if(!t) throw syntaxError('Unexpected end of expression', line, col);
+		if (t.type==='op' && (t.value==='+'||t.value==='-')) { // unary
+			consume(); return { kind:'unary', op:t.value, value: parsePrimary() };
+		}
+		if (t.type==='num'){ consume(); return { kind:'num', value: Number(t.value) }; }
+		if (t.type==='id'){ consume(); return { kind:'var', name:t.value }; }
+		if (t.type==='op' && t.value==='('){ consume(); const expr=parseAddSub(); const t2=consume(); if(!t2||t2.type!=='op'||t2.value!==')') throw syntaxError('Expected )', line, col); return expr; }
+		throw syntaxError(`Unexpected token in expression`, line, col);
+	}
+	function parseMulDiv(){
+		let node = parsePrimary();
+		while (true){ const t=peek(); if(t && t.type==='op' && (t.value==='*'||t.value==='/')){ consume(); node={ kind:'bin', op:t.value, left:node, right:parsePrimary() }; } else break; }
+		return node;
+	}
+	function parseAddSub(){
+		let node = parseMulDiv();
+		while (true){ const t=peek(); if(t && t.type==='op' && (t.value==='+'||t.value==='-')){ consume(); node={ kind:'bin', op:t.value, left:node, right:parseMulDiv() }; } else break; }
+		return node;
+	}
+	const ast = parseAddSub();
+	if (pos !== tokens.length) throw syntaxError('Unexpected extra tokens in expression', line, col);
+	return { expr: ast };
+}
+
+function parseValueExpression(str, line, col) {
+	try { return parseExpressionString(str, line, col); } catch (e) { if (e.line) throw e; throw syntaxError(e.message, line, col); }
+}
+
 /** Main parse function (formerly lex) */
 export function parse(source) {
 	if (typeof source !== 'string') throw new TypeError('parse() requires a string');
@@ -95,14 +181,38 @@ export function parse(source) {
 			let headRaw = ident(parts[0]);
 			headRaw = resolveAbbrev(headRaw);
 
+			if (headRaw === 'var') {
+				// Syntax: var name = value
+				if (parts.length < 4 || parts[2] !== '=') throw syntaxError(`Invalid var declaration. Use: var name = value`, i, 0);
+				const name = ident(parts[1]);
+				if (!/^[a-z_][a-z0-9_]*$/i.test(name)) throw syntaxError(`Invalid variable name: ${parts[1]}`, i, line.indexOf(parts[1]));
+				const valueToken = parseValueExpression(line.slice(line.indexOf(parts[3])), i, line.indexOf(parts[3]));
+				out.push({ type: 'VAR', name, value: valueToken, reassign: false });
+				i++;
+				continue;
+			}
+
+			// Re-assignment: identifier = value
+			if (/^[a-z_][a-z0-9_]*$/i.test(parts[0]) && parts.length >= 3 && parts[1] === '=') {
+				const name = ident(parts[0]);
+				const rhsIndex = line.indexOf('=') + 1;
+				const valueToken = parseValueExpression(line.slice(rhsIndex), i, rhsIndex);
+				out.push({ type: 'VAR', name, value: valueToken, reassign: true });
+				i++;
+				continue;
+			}
+
 			if (headRaw === 'repeat') {
 				if (parts.length < 2) throw syntaxError('repeat requires a count', i, line.length);
-				const count = Number(parts[1]);
-				if (!Number.isFinite(count) || count < 0) throw syntaxError(`Invalid repeat count: ${parts[1]}`, i, line.indexOf(parts[1]));
+				let countPart = line.slice(line.indexOf(parts[1]));
+				// Remove trailing { if inline
+				const hasBrace = /{\s*$/.test(line);
+				if (hasBrace) countPart = countPart.replace(/\{\s*$/,'').trim();
+				const countExpr = parseValueExpression(countPart, i, line.indexOf(parts[1]));
 				// Detect inline brace
-				let hasBrace = /{\s*$/.test(line);
+				let hasBrace2 = /{\s*$/.test(line);
 				i++;
-				if (!hasBrace) {
+				if (!hasBrace2) {
 					// Skip blank lines to find a '{'
 					while (i < lines.length && lines[i].trim() === '') i++;
 					if (i >= lines.length || lines[i] !== '{') throw syntaxError('Expected { after repeat count', i, 0);
@@ -112,25 +222,25 @@ export function parse(source) {
 					// If line ends with '{', we already consumed line including brace
 				}
 				const body = parseBlock();
-				out.push({ type: 'REPEAT', count, body });
+				out.push({ type: 'REPEAT', count: countExpr, body });
 				continue;
 			}
 
 			switch (headRaw) {
 				case 'forward':
 				case 'back': {
-					if (parts.length !== 2) throw syntaxError(`${headRaw} requires 1 numeric argument`, i, line.length);
-					const value = Number(parts[1]);
-					if (!Number.isFinite(value)) throw syntaxError(`Invalid number: ${parts[1]}`, i, line.indexOf(parts[1]));
+					if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, line.length);
+					const argStr = line.slice(line.indexOf(parts[1]));
+					const value = parseValueExpression(argStr, i, line.indexOf(parts[1]));
 					out.push({ type: 'MOVE', direction: headRaw, value });
 					i++;
 					break;
 				}
 				case 'left':
 				case 'right': {
-					if (parts.length !== 2) throw syntaxError(`${headRaw} requires 1 numeric argument`, i, line.length);
-					const value = Number(parts[1]);
-					if (!Number.isFinite(value)) throw syntaxError(`Invalid number: ${parts[1]}`, i, line.indexOf(parts[1]));
+					if (parts.length < 2) throw syntaxError(`${headRaw} requires 1 argument`, i, line.length);
+					const argStr = line.slice(line.indexOf(parts[1]));
+					const value = parseValueExpression(argStr, i, line.indexOf(parts[1]));
 					out.push({ type: 'TURN', direction: headRaw, value });
 					i++;
 					break;
