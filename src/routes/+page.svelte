@@ -140,29 +140,31 @@ repeat until y >= h:
 
     // File I/O (download/upload .tpx scripts)
     let fileInputEl = null;
-    function downloadTPX(){
+    // Derive base filename from first line comment (# or //) like: // My Art Title
+    function deriveFilename(ext){
+        let filename = 'script' + ext;
         try {
-            // Determine filename from first line comment if any
-            let filename = 'script.tpx';
             if (code) {
                 const firstLine = code.replace(/\r\n?/g,'\n').split('\n')[0];
-                // Accept # or // comment starters at beginning (allow leading spaces)
                 const m = /^\s*(?:#|\/\/)(.*)$/.exec(firstLine);
                 if (m) {
                     let raw = m[1].trim();
-                    // Remove trailing punctuation that might not belong
                     raw = raw.replace(/[\.:]+$/,'').trim();
-                    // Collapse spaces
                     raw = raw.replace(/\s+/g,' ');
                     if (raw.length) {
-                        // Sanitize: keep letters, numbers, space, dash, underscore
                         let safe = raw.replace(/[^A-Za-z0-9 _-]/g,'');
                         safe = safe.trim().replace(/\s+/g,'-').toLowerCase();
-                        if (safe.length > 40) safe = safe.slice(0,40); // limit length
-                        if (safe.length) filename = safe + '.tpx';
+                        if (safe.length > 40) safe = safe.slice(0,40);
+                        if (safe.length) filename = safe + ext;
                     }
                 }
             }
+        } catch (_) { /* ignore */ }
+        return filename;
+    }
+    function downloadTPX(){
+        try {
+            const filename = deriveFilename('.tpx');
             const blob = new Blob([code], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -185,6 +187,19 @@ repeat until y >= h:
     }
     function triggerLoad(){
         fileInputEl && fileInputEl.click();
+    }
+
+    // Export painted pixels as PNG (cropped to bounds)
+    function handleSavePNG(){
+        if (!canvasInst) return;
+    const filename = deriveFilename('.png');
+    const res = canvasInst.savePNG && canvasInst.savePNG({ filename, includeBackground: true });
+        if (!res) {
+            // optionally show a toast; for now just console
+            console.log('No pixels painted, exported full (empty) canvas');
+        } else {
+            console.log('Saved PNG', res);
+        }
     }
 
     // Load from localStorage (once, client only)
@@ -323,6 +338,7 @@ repeat until y >= h:
                             <button class="btn btn-outline btn-sm" onclick={() => { canvasInst?.clearPixels?.(); lastRunStats=null; runError=null; }}>Clear</button>
                             <button class="btn btn-outline btn-sm" onclick={downloadTPX} title="Download .tpx script">Download</button>
                             <button class="btn btn-outline btn-sm" onclick={triggerLoad} title="Load .tpx script">Upload</button>
+                            <button class="btn btn-outline btn-sm" onclick={handleSavePNG} title="Save painted pixels as PNG">Save PNG</button>
                             <label class="label cursor-pointer gap-1 ml-auto text-xs">
                                 <span class="text-base-content/60">Auto</span>
                                 <input type="checkbox" class="toggle toggle-xs" checked={autoRun} onchange={(e)=> autoRun = e.currentTarget.checked} />

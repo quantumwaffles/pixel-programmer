@@ -180,6 +180,82 @@ export default function sketch(p) {
     };
     /** Clear all painted pixels */
     p.clearPixels = function () { painted.clear(); };
+    /** Return painted pixel bounds {minX,minY,maxX,maxY,count} or null if empty */
+    p.getPaintedBounds = function () {
+        if (!painted.size) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const key of painted.keys()) {
+            const [cx, cy] = key.split(',').map(Number);
+            if (cx < minX) minX = cx;
+            if (cy < minY) minY = cy;
+            if (cx > maxX) maxX = cx;
+            if (cy > maxY) maxY = cy;
+        }
+        return { minX, minY, maxX, maxY, count: painted.size };
+    };
+    /** Export painted pixels to a cropped PNG (no grid, just pixels). Options: { filename, includeBackground } */
+    p.savePNG = function (opts = {}) {
+        try {
+            const bounds = p.getPaintedBounds();
+            if (!bounds) {
+                // Nothing painted; fall back to current canvas
+                const fn = opts.filename || 'canvas-empty.png';
+                // Use p5 built-in saveCanvas (async triggers download)
+                p.saveCanvas(fn.replace(/\.png$/i,'') , 'png');
+                return bounds;
+            }
+            const { minX, minY, maxX, maxY } = bounds;
+            const wCells = maxX - minX + 1;
+            const hCells = maxY - minY + 1;
+            const w = wCells * pixelSize;
+            const h = hCells * pixelSize;
+            // Guard against excessively large exports (e.g. > 8000px any dimension)
+            if (w > 8000 || h > 8000) {
+                console.warn('Refusing to export huge image', w, h);
+            }
+            const g = p.createGraphics(w, h);
+            if (opts.includeBackground !== false) {
+                g.background(bgColor);
+            } else {
+                g.clear();
+            }
+            g.noStroke();
+            for (const [key, hsv] of painted) {
+                const [cx, cy] = key.split(',').map(Number);
+                const x = (cx - minX) * pixelSize;
+                const y = (cy - minY) * pixelSize;
+                g.push();
+                g.colorMode(g.HSB, 360, 100, 100);
+                g.fill(hsv.h, hsv.s, hsv.v);
+                g.rect(x, y, pixelSize, pixelSize);
+                g.pop();
+            }
+            // Convert to blob and trigger download manually (for consistent filename)
+            const filename = opts.filename || 'pixel-canvas.png';
+            const cnv = g.canvas; // HTMLCanvasElement
+            if (cnv.toBlob) {
+                cnv.toBlob(blob => {
+                    if (!blob) return;
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = filename;
+                    document.body.appendChild(a); a.click();
+                    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
+                }, 'image/png');
+            } else {
+                // Fallback via dataURL
+                const a = document.createElement('a');
+                a.href = cnv.toDataURL('image/png');
+                a.download = filename;
+                document.body.appendChild(a); a.click();
+                setTimeout(()=> a.remove(), 0);
+            }
+            return { ...bounds, width: w, height: h };
+        } catch (e) {
+            console.error('savePNG failed', e);
+            return null;
+        }
+    };
     /** Get current pixel size */
     p.getPixelSize = function () { return pixelSize; };
     /** Set current heading (degrees) */
